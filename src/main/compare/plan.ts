@@ -42,8 +42,13 @@ export function rowToPlannedAction(
     case 'Delete':
       destPath = row.direction === 'rightToLeft' ? leftPath : rightPath
       break
-    default:
+    case 'Move':
+    case 'Rename': {
+      const fromRel = row.fromRelPath ?? row.relPath
+      sourcePath = path.join(pair.right, fromRel)
+      destPath = path.join(pair.right, row.relPath)
       break
+    }
   }
 
   return {

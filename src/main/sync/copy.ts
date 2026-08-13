@@ -44,6 +44,16 @@ async function copyFile(source: string, dest: string, options: CopyOptions): Pro
 
     await fs.mkdir(path.dirname(dest), { recursive: true })
 
+    try {
+      const destStat = await fs.lstat(dest)
+      const srcStat = await fs.lstat(source)
+      if (destStat.size === srcStat.size && destStat.mtimeMs === srcStat.mtimeMs && !destStat.isDirectory()) {
+        return ok(undefined)
+      }
+    } catch {
+      /* dest missing — copy */
+    }
+
     let kernelSucceeded = false
 
     if (process.platform === 'win32') {
@@ -168,6 +178,27 @@ export async function copyStreamsOnly(action: PlannedAction): Promise<Result<voi
 
 export async function createEntry(action: PlannedAction, options: CopyOptions): Promise<Result<void>> {
   return copyEntry(action, options)
+}
+
+export async function moveEntry(action: PlannedAction): Promise<Result<void>> {
+  if (!action.sourcePath || !action.destPath) {
+    return ioError('Move action is missing source or destination path.')
+  }
+
+  try {
+    await fs.mkdir(path.dirname(action.destPath), { recursive: true })
+    await fs.rename(action.sourcePath, action.destPath)
+    return ok(undefined)
+  } catch (error) {
+    const code = error instanceof Error && 'code' in error ? String((error as { code?: string }).code) : ''
+    if (code === 'EXDEV') {
+      const copied = await copyEntry(action, { excludeStreams: action.excludeStreams })
+      if (!copied.ok) return copied
+      return deleteEntry(action.sourcePath, action.isDir, false)
+    }
+    const message = error instanceof Error ? error.message : String(error)
+    return ioError(`Move failed: ${message}`)
+  }
 }
 
 export async function deleteEntry(

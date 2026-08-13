@@ -11,6 +11,7 @@ function adsHint(row: CompareRow): string {
 
 function rowClass(row: CompareRow): string {
   if (!row.included) return 'row-excluded'
+  if (row.action === 'Move' || row.action === 'Rename') return 'row-move'
   switch (row.category) {
     case 'equal':
       return 'row-equal'
@@ -58,7 +59,18 @@ const FILTER_OPTIONS: Array<{ id: CompareFilter; label: string; tooltip: string 
   {
     id: 'rightOnly',
     label: 'Target only →',
-    tooltip: 'Show items that exist on the target but not in the source. In mirror mode these are usually deleted on sync.',
+    tooltip: 'Show items that exist in the target folder but not in the source.',
+  },
+  {
+    id: 'deleted',
+    label: 'Deleted',
+    tooltip:
+      'Show items gone from the source that will be deleted on the target. Uncheck a row to keep it.',
+  },
+  {
+    id: 'moved',
+    label: 'Moved',
+    tooltip: 'Show items that were renamed or moved to another folder — sync will rename on the target instead of copy+delete.',
   },
   {
     id: 'adsDiff',

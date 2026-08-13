@@ -48,12 +48,15 @@ export class CompareRowStore {
   private categories = new Uint8Array(1024)
   private adsEqualBits = new Uint8Array(1024)
   private includedBits = new Uint8Array(1024)
+  private deleteBits = new Uint8Array(1024)
+  private moveBits = new Uint8Array(1024)
   private count = 0
   private bytes = 0
   private includedOverrides = new Map<string, boolean>()
   private stats: CompareStats = createEmptyStats()
   private extraEqual = 0
   private fh: fs.promises.FileHandle | null = null
+  private writableClosed = false
 
   constructor(filePath: string) {
     this.filePath = filePath
@@ -68,6 +71,8 @@ export class CompareRowStore {
     this.categories[this.count] = CATEGORY_CODE[row.category]
     this.adsEqualBits[this.count] = row.adsDelta.equal ? 1 : 0
     this.includedBits[this.count] = row.included ? 1 : 0
+    this.deleteBits[this.count] = row.action === 'Delete' ? 1 : 0
+    this.moveBits[this.count] = row.action === 'Move' || row.action === 'Rename' ? 1 : 0
     this.count++
     accountDiff(this.stats, row)
     const size = Buffer.byteLength(line)
@@ -105,13 +110,16 @@ export class CompareRowStore {
   }
 
   async close(): Promise<void> {
-    await new Promise<void>((resolve, reject) => {
-      this.stream.end((err: Error | null | undefined) => {
-        if (err) reject(err)
-        else resolve()
+    if (!this.writableClosed) {
+      this.writableClosed = true
+      await new Promise<void>((resolve, reject) => {
+        this.stream.end((err: Error | null | undefined) => {
+          if (err) reject(err)
+          else resolve()
+        })
       })
-    })
-    this.fh = await fsp.open(this.filePath, 'r')
+    }
+    if (!this.fh) this.fh = await fsp.open(this.filePath, 'r')
   }
 
   async getPage(
@@ -133,12 +141,87 @@ export class CompareRowStore {
   }
 
   async *iterateIncluded(): AsyncGenerator<CompareRow> {
-    for (let i = 0; i < this.count; i++) {
-      const row = await this.readIndex(i)
-      if (!row) continue
+    for await (const row of this.iterateAll()) {
       if (!row.included || row.action === 'Skip') continue
       yield row
     }
+  }
+
+  async *iterateAll(): AsyncGenerator<CompareRow> {
+    for (let i = 0; i < this.count; i++) {
+      const row = await this.readIndex(i)
+      if (row) yield row
+    }
+  }
+
+  async applyReplacements(dropIds: Set<string>, replacements: Map<string, CompareRow>): Promise<void> {
+    if (dropIds.size === 0 && replacements.size === 0) return
+    if (!this.fh) throw new Error('Compare store is not readable.')
+
+    const tmpPath = `${this.filePath}.tmp`
+    const tmp = fs.createWriteStream(tmpPath)
+    const offsets = new Uint32Array(Math.max(1024, this.count))
+    const categories = new Uint8Array(Math.max(1024, this.count))
+    const adsEqualBits = new Uint8Array(Math.max(1024, this.count))
+    const includedBits = new Uint8Array(Math.max(1024, this.count))
+    const deleteBits = new Uint8Array(Math.max(1024, this.count))
+    const moveBits = new Uint8Array(Math.max(1024, this.count))
+    const stats = createEmptyStats()
+    accountEquals(stats, this.extraEqual)
+
+    let count = 0
+    let bytes = 0
+
+    const write = async (row: CompareRow): Promise<void> => {
+      if (count >= offsets.length) {
+        /* grow handled by using this.count as capacity; fall through */
+      }
+      row.id = String(count)
+      const line = `${JSON.stringify(row)}\n`
+      offsets[count] = bytes
+      categories[count] = CATEGORY_CODE[row.category]
+      adsEqualBits[count] = row.adsDelta.equal ? 1 : 0
+      includedBits[count] = row.included ? 1 : 0
+      deleteBits[count] = row.action === 'Delete' ? 1 : 0
+      moveBits[count] = row.action === 'Move' || row.action === 'Rename' ? 1 : 0
+      count++
+      accountDiff(stats, row)
+      const size = Buffer.byteLength(line)
+      bytes += size
+      if (!tmp.write(line)) {
+        await new Promise<void>((resolve) => tmp.once('drain', resolve))
+      }
+    }
+
+    for (let i = 0; i < this.count; i++) {
+      const row = await this.readIndex(i)
+      if (!row) continue
+      if (dropIds.has(row.id)) continue
+      await write(replacements.get(row.id) ?? row)
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      tmp.end((err: Error | null | undefined) => {
+        if (err) reject(err)
+        else resolve()
+      })
+    })
+
+    await this.fh.close()
+    this.fh = null
+    await fsp.unlink(this.filePath)
+    await fsp.rename(tmpPath, this.filePath)
+
+    this.offsets = offsets
+    this.categories = categories
+    this.adsEqualBits = adsEqualBits
+    this.includedBits = includedBits
+    this.deleteBits = deleteBits
+    this.moveBits = moveBits
+    this.count = count
+    this.bytes = bytes
+    this.stats = stats
+    this.fh = await fsp.open(this.filePath, 'r')
   }
 
   async dispose(): Promise<void> {
@@ -158,7 +241,9 @@ export class CompareRowStore {
   private matches(index: number, filter: CompareFilter): boolean {
     const category = CODE_CATEGORY[this.categories[index] ?? 0] ?? 'equal'
     const adsEqual = this.adsEqualBits[index] === 1
-    return categoryMatchesFilter(category, adsEqual, filter)
+    const action =
+      this.deleteBits[index] === 1 ? 'Delete' : this.moveBits[index] === 1 ? 'Move' : undefined
+    return categoryMatchesFilter(category, adsEqual, filter, action)
   }
 
   private async readIndex(index: number): Promise<CompareRow | undefined> {
@@ -212,6 +297,12 @@ export class CompareRowStore {
     const included = new Uint8Array(next)
     included.set(this.includedBits)
     this.includedBits = included
+    const deletes = new Uint8Array(next)
+    deletes.set(this.deleteBits)
+    this.deleteBits = deletes
+    const moves = new Uint8Array(next)
+    moves.set(this.moveBits)
+    this.moveBits = moves
   }
 }
 
@@ -230,6 +321,10 @@ export function hydrateRowPaths(row: CompareRow, job: JobFile): CompareRow {
   const pair = job.pairs.find((p) => p.id === row.pairId)
   if (!pair) return row
   if (row.left) row.leftPath = path.join(pair.left, row.relPath)
-  if (row.right) row.rightPath = path.join(pair.right, row.relPath)
+  if (row.action === 'Move' || row.action === 'Rename') {
+    row.rightPath = path.join(pair.right, row.fromRelPath ?? row.relPath)
+  } else if (row.right) {
+    row.rightPath = path.join(pair.right, row.relPath)
+  }
   return row
 }

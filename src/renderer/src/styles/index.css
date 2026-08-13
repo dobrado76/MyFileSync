@@ -430,6 +430,7 @@ body {
 .row-copy-ltr { background: rgba(55, 148, 255, 0.12); }
 .row-copy-rtl { background: rgba(0, 188, 212, 0.12); }
 .row-ads-diff { background: rgba(255, 193, 7, 0.12); }
+.row-move { background: rgba(156, 39, 176, 0.12); }
 .row-excluded { opacity: 0.55; text-decoration: line-through; }
 
 .compare-summary {

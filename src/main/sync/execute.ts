@@ -4,7 +4,7 @@ import type { JobFile } from '@shared/schemas/job'
 import type { PlannedAction, SyncProgress, SyncSummary } from '@shared/schemas/compare'
 import { rowToPlannedAction } from '../compare/plan'
 import type { CompareRowStore } from '../compare/rowStore'
-import { copyEntry, copyStreamsOnly, createEntry, deleteEntry, type CopyOptions } from './copy'
+import { copyEntry, copyStreamsOnly, createEntry, deleteEntry, moveEntry, type CopyOptions } from './copy'
 import { resolvePairRoot, versionBeforeMutation } from './versioning'
 
 export type SyncRunState = {
@@ -67,40 +67,50 @@ export async function executeSync(
     },
   })
 
-  for await (const row of store.iterateIncluded()) {
+  for (const phase of [
+    (action: string) => action === 'Move' || action === 'Rename',
+    (action: string) =>
+      action === 'Create' || action === 'Update' || action === 'UpdateStreamsOnly',
+    (action: string) => action === 'Delete',
+  ] as const) {
+    for await (const row of store.iterateIncluded()) {
+      if (state.cancelled) break
+      if (!phase(row.action)) continue
+
+      const action = rowToPlannedAction(row, job, job.pairs)
+      if (!action) continue
+
+      const pair = job.pairs.find((p) => p.id === action.pairId)
+      const options = copyOptions()
+      if (pair) {
+        options.filterRoot =
+          action.direction === 'rightToLeft' ? pair.right : pair.left
+      }
+
+      state.progress.currentPath = action.relPath
+      state.progress.phase =
+        action.action === 'Delete' ? 'deleting' : action.action === 'Move' || action.action === 'Rename' ? 'copying' : 'copying'
+      emit({ type: 'sync:progress', syncRunId, progress: { ...state.progress } })
+
+      const result = await runAction(action, job, options)
+      state.progress.done++
+      if (result.ok) {
+        succeeded++
+        emit({ type: 'sync:itemDone', syncRunId, rowId: action.rowId, ok: true })
+      } else {
+        failed++
+        state.progress.errors++
+        emit({
+          type: 'sync:itemDone',
+          syncRunId,
+          rowId: action.rowId,
+          ok: false,
+          error: result.error.message,
+        })
+      }
+      emit({ type: 'sync:progress', syncRunId, progress: { ...state.progress } })
+    }
     if (state.cancelled) break
-
-    const action = rowToPlannedAction(row, job, job.pairs)
-    if (!action) continue
-
-    const pair = job.pairs.find((p) => p.id === action.pairId)
-    const options = copyOptions()
-    if (pair) {
-      options.filterRoot =
-        action.direction === 'rightToLeft' ? pair.right : pair.left
-    }
-
-    state.progress.currentPath = action.relPath
-    state.progress.phase = action.action === 'Delete' ? 'deleting' : 'copying'
-    emit({ type: 'sync:progress', syncRunId, progress: { ...state.progress } })
-
-    const result = await runAction(action, job, options)
-    state.progress.done++
-    if (result.ok) {
-      succeeded++
-      emit({ type: 'sync:itemDone', syncRunId, rowId: action.rowId, ok: true })
-    } else {
-      failed++
-      state.progress.errors++
-      emit({
-        type: 'sync:itemDone',
-        syncRunId,
-        rowId: action.rowId,
-        ok: false,
-        error: result.error.message,
-      })
-    }
-    emit({ type: 'sync:progress', syncRunId, progress: { ...state.progress } })
   }
 
   state.progress.phase = state.cancelled ? 'cancelled' : 'done'
@@ -118,6 +128,9 @@ export async function executeSync(
 
 async function runAction(action: PlannedAction, job: JobFile, copyOptions: CopyOptions) {
   switch (action.action) {
+    case 'Move':
+    case 'Rename':
+      return moveEntry(action)
     case 'Create':
       return createEntry(action, copyOptions)
     case 'Update': {

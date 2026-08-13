@@ -152,6 +152,7 @@ export function accountDiff(stats: CompareStats, row: CompareRow): void {
   if (row.action === 'Create') stats.creates++
   if (row.action === 'Update' || row.action === 'UpdateStreamsOnly') stats.updates++
   if (row.action === 'Delete') stats.deletes++
+  if (row.action === 'Move' || row.action === 'Rename') stats.moves++
   if (row.category === 'adsDiff' || !row.adsDelta.equal) stats.adsDiffs++
 }
 
@@ -169,6 +170,7 @@ export function computeStats(rows: CompareRow[], extraEqual = 0): CompareStats {
     updates: 0,
     deletes: 0,
     adsDiffs: 0,
+    moves: 0,
   }
 
   for (const row of rows) {
@@ -182,6 +184,7 @@ export function categoryMatchesFilter(
   category: CompareCategory,
   adsEqual: boolean,
   filter: CompareFilter,
+  action?: SyncActionType,
 ): boolean {
   switch (filter) {
     case 'all':
@@ -192,6 +195,10 @@ export function categoryMatchesFilter(
       return category === 'leftOnly'
     case 'rightOnly':
       return category === 'rightOnly'
+    case 'deleted':
+      return action === 'Delete'
+    case 'moved':
+      return action === 'Move' || action === 'Rename'
     case 'adsDiff':
       return category === 'adsDiff' || !adsEqual
     case 'errors':
@@ -202,5 +209,5 @@ export function categoryMatchesFilter(
 }
 
 export function rowMatchesFilter(row: CompareRow, filter: CompareFilter): boolean {
-  return categoryMatchesFilter(row.category, row.adsDelta.equal, filter)
+  return categoryMatchesFilter(row.category, row.adsDelta.equal, filter, row.action)
 }

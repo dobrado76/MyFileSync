@@ -82,13 +82,12 @@ type SideRecord = {
 
 ## Move/rename detection
 
-**Sync DB:** FreeFileSync-style — file ID + last-run state.
+Enabled by default (`behavior.detectMovedRenamed`). After the paired walk:
 
-**Hash / ADS pairing (BackupMirror-style):**
-
-1. Collect `Delete` + `Create` pairs in same job run.
-2. Match when: same primary hash, same size, **identical ADS name list** (order-independent).
-3. Collapse to `Move`/`Rename`; remove redundant child actions for folder moves.
+1. Pair `Delete` + `Create` with the same size and mtime (NTFS `Move` preserves both). Same name → **Move**; same parent folder → **Rename**.
+2. Whole folders that were collapsed to one Create/Delete are paired the same way, then sync uses `Directory.Move`.
+3. Files moved into a **new** folder are found by walking that source folder for a size+mtime match.
+4. Sync runs moves first, then copies, then deletes. Copy skips a destination that already matches size+time.
 
 ## Fast folder compare
 
@@ -116,7 +115,7 @@ flowchart LR
   copy --> ads
 ```
 
-- Order: **creates before updates before deletes** within same directory depth where possible; deletes last for mirror (children before parents on delete — post-order).
+- Order: **moves, then creates/updates, then deletes**. A detected move is `rename` on the target (copy+delete only if the volumes differ).
 - `parallelism.copyPerDevice`: max concurrent copies per volume root (FFS-style).
 - Progress: `{ phase, done, total, currentPath, bytes, etaMs }` events.
 - Cancel: cooperative flag checked between actions.

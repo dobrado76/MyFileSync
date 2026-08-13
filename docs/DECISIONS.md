@@ -20,6 +20,7 @@ Locked product and technical decisions. Update this file when behavior changes.
 | **D14** | Renderer has **no Node integration**; typed preload IPC + Zod | Isolated UI process |
 | **D15** | Every new job preference in **`jobSchema`** (Zod) so export/import round-trips | Avoid parallel export allowlists |
 | **D16** | Compare is BackupMirror **`GetFiles`**: paired walk, `$DATA` then ADS, **collapsed missing trees**, JSONL change list | 75M-file trees cannot live as in-memory row objects |
+| **D17** | Move/rename detection pairs Create+Delete by **size + mtime** (hash if both present); collapsed new folders are indexed once; sync **moves first** | NTFS Move keeps size/time; avoids copy+delete on large trees |
 
 ## Open follow-ups
 

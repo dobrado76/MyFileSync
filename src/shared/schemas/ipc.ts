@@ -101,7 +101,7 @@ export const compareGetRowsRequestSchema = z.object({
   offset: z.number().int().nonnegative(),
   limit: z.number().int().min(1).max(5000),
   filter: z
-    .enum(['all', 'differences', 'leftOnly', 'rightOnly', 'adsDiff', 'errors'])
+    .enum(['all', 'differences', 'leftOnly', 'rightOnly', 'deleted', 'moved', 'adsDiff', 'errors'])
     .optional(),
 })
 

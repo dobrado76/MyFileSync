@@ -15,6 +15,7 @@ Work since **0.1.0** (not a new tagged release yet).
 - Filter manager (gitignore-style patterns and relative paths).
 - Custom app icon; compare status shows live item count and elapsed time.
 - Settings modal, window restore, job toolbar.
+- Move/rename detection after compare: same size+mtime Create+Delete become Move (or Rename); sync renames on the target instead of copy+delete.
 
 ## [0.1.0] — 2026-08-13
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { classifyPair, computeAdsDelta, computeStats, planAction } from '@shared/compare/classify'
+import { classifyPair, computeAdsDelta, computeStats, planAction, rowMatchesFilter } from '@shared/compare/classify'
 import { createDefaultJob } from '@shared/schemas/job'
 import type { SideRecord } from '@shared/schemas/compare'
 
@@ -38,6 +38,15 @@ describe('classify', () => {
   it('plans mirror delete for right-only', () => {
     const action = planAction('rightOnly', 'mirror')
     expect(action.action).toBe('Delete')
+  })
+
+  it('matches the Deleted filter for mirror deletes', () => {
+    const right = side({ relPath: 'gone.txt' })
+    const row = classifyPair('pair', 'gone.txt', undefined, right, job)
+    expect(row.action).toBe('Delete')
+    expect(rowMatchesFilter(row, 'deleted')).toBe(true)
+    expect(rowMatchesFilter(row, 'rightOnly')).toBe(true)
+    expect(rowMatchesFilter(row, 'leftOnly')).toBe(false)
   })
 
   it('computes ads delta', () => {

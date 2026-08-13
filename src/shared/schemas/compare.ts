@@ -59,6 +59,8 @@ export type CompareRow = {
   adsDelta: AdsDelta
   leftPath?: string
   rightPath?: string
+  /** Previous relative path on the target when action is Move or Rename. */
+  fromRelPath?: string
 }
 
 export type CompareStats = {
@@ -69,6 +71,7 @@ export type CompareStats = {
   updates: number
   deletes: number
   adsDiffs: number
+  moves: number
 }
 
 export type CompareFilter =
@@ -76,6 +79,8 @@ export type CompareFilter =
   | 'differences'
   | 'leftOnly'
   | 'rightOnly'
+  | 'deleted'
+  | 'moved'
   | 'adsDiff'
   | 'errors'
 
@@ -126,5 +131,6 @@ export function createEmptyStats(): CompareStats {
     updates: 0,
     deletes: 0,
     adsDiffs: 0,
+    moves: 0,
   }
 }

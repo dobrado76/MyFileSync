@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, nativeImage, shell } from 'electron'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { registerIpc } from './ipc/register'
@@ -15,9 +15,12 @@ const isDev = !app.isPackaged
 app.setAppUserModelId('com.myfilesync.app')
 
 function appIconPath(): string | undefined {
-  const ico = join(__dirname, '../../build/icon.ico')
-  if (existsSync(ico)) return ico
-  return undefined
+  const candidates = [
+    join(process.cwd(), 'build/icon.ico'),
+    join(__dirname, '../../build/icon.ico'),
+    join(process.resourcesPath, 'icon.ico'),
+  ]
+  return candidates.find((file) => existsSync(file))
 }
 
 function isHeadlessCli(): boolean {
@@ -36,6 +39,9 @@ function preloadPath(): string {
 async function createWindow(): Promise<void> {
   const saved = await loadWindowState()
   const initial = saved ?? DEFAULT_WINDOW_STATE
+  const iconFile = appIconPath()
+  const icon = iconFile ? nativeImage.createFromPath(iconFile) : undefined
+  const windowIcon = icon && !icon.isEmpty() ? icon : undefined
 
   const window = new BrowserWindow({
     x: saved ? initial.x : undefined,
@@ -47,7 +53,7 @@ async function createWindow(): Promise<void> {
     show: false,
     autoHideMenuBar: true,
     title: 'MyFileSync',
-    icon: appIconPath(),
+    icon: windowIcon,
     webPreferences: {
       preload: preloadPath(),
       sandbox: false,
@@ -55,6 +61,10 @@ async function createWindow(): Promise<void> {
       nodeIntegration: false,
     },
   })
+
+  if (windowIcon) {
+    window.setIcon(windowIcon)
+  }
 
   if (!saved) {
     window.center()

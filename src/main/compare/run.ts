@@ -9,6 +9,7 @@ import {
   hydrateRowPaths,
   openCompareRowStore,
 } from '../compare/rowStore'
+import { applyMoveDetection } from '../compare/moveDetect'
 import { preflightPairUncPaths } from '../remote/preflight'
 
 export type CompareEvent =
@@ -157,6 +158,12 @@ export async function runCompare(
 
       store.addEquals(result.equalCount)
       pairIndex++
+    }
+
+    if (!cancelFlags.get(runId) && job.behavior.detectMovedRenamed) {
+      progress.message('Detecting moved files…')
+      await store.close()
+      await applyMoveDetection(store, job)
     }
   } finally {
     progress.stop()

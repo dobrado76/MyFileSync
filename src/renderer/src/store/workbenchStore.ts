@@ -12,6 +12,12 @@ export type LogEntry = {
   level: 'info' | 'error' | 'success'
 }
 
+function formatCompareStatus(stats: CompareStats): string {
+  const parts = [`Compared ${stats.total} items`, `${stats.toSync} to sync`]
+  if (stats.moves > 0) parts.push(`${stats.moves} moved`)
+  return parts.join(' · ')
+}
+
 type WorkbenchState = {
   initialized: boolean
   appVersion: string
@@ -381,7 +387,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
         compareRunId: result.value.runId,
         compareStats: result.value.stats,
         compareRows: rows.ok ? rows.value.rows : [],
-        statusText: `Compared ${result.value.stats.total} items · ${result.value.stats.toSync} to sync`,
+        statusText: formatCompareStatus(result.value.stats),
       })
       if (activeJob.behavior.autoSyncAfterCompare && result.value.stats.toSync > 0) {
         await get().runSync()

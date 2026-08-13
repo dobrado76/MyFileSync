@@ -27,7 +27,7 @@
 - Click **Compare** → paired walk of each enabled folder pair (BackupMirror `GetFiles`).
 - Grid shows: relative path, left size/time, right size/time, action, ADS badge (stream count diff).
 - Color rows: equal (green), copy left→right (blue), copy right→left (teal), delete (red), conflict (yellow).
-- Filter toolbar: all, differences, source only, target only, ADS ≠.
+- Filter toolbar: all, differences, source only, target only, deleted, ADS ≠.
 - Expand row → stream manifest table (name, left size, right size).
 
 **Acceptance:** Folder with only ADS difference (same `$DATA`) shows **Update streams only**, not “equal”.
