@@ -7,6 +7,7 @@ import {
   toAdsManifest,
   toLongPath,
   validateStreamName,
+  withoutIgnoredStreams,
 } from '@shared/ads/paths'
 
 describe('validateStreamName', () => {
@@ -70,5 +71,14 @@ describe('manifest helpers', () => {
       { name: 'Zone.Identifier', size: 26 },
     ])
     expect(manifest).toEqual([{ name: 'Zone.Identifier', size: 26 }])
+  })
+
+  it('drops ignored stream names', () => {
+    const manifest = [
+      { name: 'Zone.Identifier', size: 26 },
+      { name: 'parameters', size: 12 },
+    ]
+    expect(withoutIgnoredStreams(manifest, ['Zone.Identifier'])).toEqual([{ name: 'parameters', size: 12 }])
+    expect(withoutIgnoredStreams(manifest, 'all')).toEqual([])
   })
 })

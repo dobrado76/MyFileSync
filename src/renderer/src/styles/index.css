@@ -833,15 +833,6 @@ body {
   min-width: 0;
 }
 
-.bm-options-bar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem 1.25rem;
-  padding: 0.5rem 0.75rem;
-  border-top: 1px solid var(--border);
-  background: var(--bg-elevated);
-}
-
 .bm-run-bar {
   display: flex;
   align-items: center;
@@ -920,6 +911,170 @@ body {
 .filter-toggle:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.compare-folder-chip {
+  margin-left: auto;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.75rem;
+  padding: 0.2rem 0.65rem;
+  cursor: pointer;
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compare-folder-chip:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.compare-split {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.compare-split-dragging {
+  cursor: col-resize;
+  user-select: none;
+}
+
+.compare-tree-pane {
+  flex: 0 0 auto;
+  min-width: 140px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.compare-tree {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  overflow: auto;
+  padding: 0.35rem 0.25rem 0.5rem 0.35rem;
+  background: var(--bg);
+}
+
+.compare-split-gutter {
+  flex: 0 0 6px;
+  width: 6px;
+  cursor: col-resize;
+  background: var(--border);
+  z-index: 2;
+}
+
+.compare-split-gutter:hover,
+.compare-split-dragging .compare-split-gutter {
+  background: var(--accent);
+}
+
+.compare-tree-empty {
+  margin: 0.75rem 0.5rem;
+  color: var(--fg-muted);
+  font-size: 0.75rem;
+}
+
+.compare-tree-branch .compare-tree-branch {
+  padding-left: 0.85rem;
+}
+
+.compare-tree-node {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  width: 100%;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.8125rem;
+  text-align: left;
+  padding: 0.15rem 0.25rem;
+  cursor: pointer;
+}
+
+.compare-tree-node:hover {
+  background: rgba(55, 148, 255, 0.12);
+}
+
+.compare-tree-node-selected {
+  background: rgba(55, 148, 255, 0.22);
+}
+
+.compare-tree-twist {
+  display: inline-flex;
+  width: 1rem;
+  flex-shrink: 0;
+  justify-content: center;
+  color: var(--fg-muted);
+  font-size: 0.7rem;
+}
+
+.compare-tree-twist-leaf {
+  visibility: hidden;
+}
+
+.compare-tree-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compare-tree-count {
+  margin-left: auto;
+  color: var(--fg-muted);
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+  padding-left: 0.35rem;
+}
+
+.tree-context-menu {
+  position: fixed;
+  z-index: 40;
+  min-width: 16.5rem;
+  max-width: 22rem;
+  padding: 0.25rem 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+.tree-context-menu button {
+  display: block;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.8125rem;
+  text-align: left;
+  padding: 0.4rem 0.85rem;
+  cursor: pointer;
+}
+
+.tree-context-menu button:hover:not(:disabled) {
+  background: rgba(55, 148, 255, 0.18);
+}
+
+.tree-context-menu button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.tree-context-sep {
+  height: 1px;
+  margin: 0.25rem 0;
+  background: var(--border);
 }
 
 .compare-grid-bm .col-source,

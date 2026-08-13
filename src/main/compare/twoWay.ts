@@ -1,6 +1,7 @@
 import path from 'node:path'
 import { minimatch } from 'minimatch'
 import {
+  adsIgnoredStreamNames,
   computeAdsDelta,
   recordsEqual,
   toSideSummary,
@@ -107,6 +108,7 @@ function sideChanged(
   current: SideRecord | undefined,
   prev: FileState | undefined,
   hashContent: boolean,
+  ignored: readonly string[] | 'all',
 ): boolean {
   if (!current && prev) return true
   if (current && !prev) return true
@@ -119,7 +121,7 @@ function sideChanged(
       primaryHash: prev.primaryHash ?? undefined,
       adsManifest: prev.adsManifest,
     }
-    return !recordsEqual(current, prevRecord, hashContent)
+    return !recordsEqual(current, prevRecord, hashContent, ignored)
   }
   return false
 }
@@ -132,7 +134,8 @@ export function classifyTwoWayPair(
   job: JobFile,
   prevStates?: { left?: FileState; right?: FileState },
 ): CompareRow {
-  const adsDelta = computeAdsDelta(left?.adsManifest, right?.adsManifest)
+  const ignored = adsIgnoredStreamNames(job)
+  const adsDelta = computeAdsDelta(left?.adsManifest, right?.adsManifest, ignored)
   const hashContent =
     job.compare.method === 'content' ||
     (job.compare.hashWhenSizeOrTimeDiffers && Boolean(left && right))
@@ -174,8 +177,8 @@ export function classifyTwoWayPair(
     } else if (dataEqual && !adsEqual) {
       category = 'adsDiff'
     } else {
-      const leftChangedSinceSync = sideChanged(left, prevLeft, hashContent)
-      const rightChangedSinceSync = sideChanged(right, prevRight, hashContent)
+      const leftChangedSinceSync = sideChanged(left, prevLeft, hashContent, ignored)
+      const rightChangedSinceSync = sideChanged(right, prevRight, hashContent, ignored)
 
       if (leftChangedSinceSync && rightChangedSinceSync) {
         if (left.mtimeMs > right.mtimeMs) category = 'leftNewer'

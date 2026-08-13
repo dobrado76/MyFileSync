@@ -55,4 +55,19 @@ describe('CompareRowStore', () => {
 
     await store.dispose()
   })
+
+  it('drops a folder prefix from the change list', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'mfs-rows-'))
+    temps.push(dir)
+    const store = new CompareRowStore(path.join(dir, 'run.jsonl'))
+    await store.append(row('keep/a.txt'))
+    await store.append(row('drop/a.txt'))
+    await store.append(row('drop/b.txt'))
+    await store.close()
+    const n = await store.dropMatching((r) => r.relPath.startsWith('drop/'))
+    expect(n).toBe(2)
+    const page = await store.getPage(0, 50, 'all')
+    expect(page.rows.map((r) => r.relPath)).toEqual(['keep/a.txt'])
+    await store.dispose()
+  })
 })

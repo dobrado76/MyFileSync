@@ -67,6 +67,19 @@ export function relativeFilterFromAbs(absPath: string, roots: string[]): string 
   return null
 }
 
+/** Gitignore rule for this folder instance only (`/name` at pair root, or `parent/name`). */
+export function excludeThisFolderRule(relFolder: string): string | null {
+  const p = stripTrailingSlash(normalizeSlashes(relFolder.trim()))
+  if (!p) return null
+  return p.includes('/') ? p : `/${p}`
+}
+
+/** Gitignore rule for every folder (or file) with this name, at any depth. */
+export function excludeFolderNameRule(relFolder: string): string | null {
+  const name = basename(relFolder)
+  return name || null
+}
+
 function matchPattern(relPath: string, pattern: string): boolean {
   let glob = normalizeSlashes(pattern.trim())
   if (!glob || glob.startsWith('#')) return false

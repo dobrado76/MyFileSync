@@ -103,6 +103,14 @@ export const compareGetRowsRequestSchema = z.object({
   filter: z
     .enum(['all', 'differences', 'leftOnly', 'rightOnly', 'deleted', 'moved', 'adsDiff', 'errors'])
     .optional(),
+  pathPrefix: z.string().optional(),
+})
+
+export const compareGetTreeRequestSchema = z.object({
+  runId: z.string().uuid(),
+  filter: z
+    .enum(['all', 'differences', 'leftOnly', 'rightOnly', 'deleted', 'moved', 'adsDiff', 'errors'])
+    .optional(),
 })
 
 export const compareCancelRequestSchema = z.object({ runId: z.string().uuid().optional() })
@@ -113,11 +121,22 @@ export const compareSetRowIncludedRequestSchema = z.object({
   included: z.boolean(),
 })
 
+export const compareDropRequestSchema = z
+  .object({
+    runId: z.string().uuid(),
+    pathPrefix: z.string().optional(),
+    folderName: z.string().min(1).optional(),
+  })
+  .refine((req) => req.pathPrefix !== undefined || Boolean(req.folderName), {
+    message: 'pathPrefix or folderName is required.',
+  })
+
 export const syncRunRequestSchema = z.object({
   jobId: z.string().uuid(),
   runId: z.string().uuid(),
+  pathPrefix: z.string().optional(),
 })
 
-export const syncCancelRequestSchema = z.object({ syncRunId: z.string().uuid() })
+export const syncCancelRequestSchema = z.object({ syncRunId: z.string().uuid().optional() })
 
 export const syncGetProgressRequestSchema = z.object({ syncRunId: z.string().uuid() })

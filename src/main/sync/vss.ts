@@ -30,7 +30,7 @@ export function handleLockedFileCopy(
   if (!options.vssEnabled) {
     return busyError(
       'File is in use by another program.',
-      'Enable Volume Shadow Copy (VSS) in job settings to copy locked files.',
+      'Close the program using the file, then sync again.',
     )
   }
 

@@ -15,6 +15,8 @@ export default function App() {
     activePairIndex,
     mainTab,
     compareRows,
+    compareFolderTree,
+    comparePathPrefix,
     compareFilter,
     compareBusy,
     compareStats,
@@ -22,6 +24,7 @@ export default function App() {
     statusText,
     logs,
     showDeleteConfirm,
+    pendingSyncDeletes,
     updatesFolder,
     updatesStatus,
     pendingUpdate,
@@ -49,6 +52,8 @@ export default function App() {
     cancelSyncConfirm,
     cancelOperation,
     setCompareFilter,
+    selectCompareFolder,
+    handleFolderAction,
     toggleRowIncluded,
     browseUpdatesFolder,
     checkForUpdates,
@@ -99,6 +104,8 @@ export default function App() {
         activePairIndex={activePairIndex}
         mainTab={mainTab}
         compareRows={compareRows}
+        compareFolderTree={compareFolderTree}
+        comparePathPrefix={comparePathPrefix}
         compareFilter={compareFilter}
         compareBusy={compareBusy}
         compareStats={compareStats}
@@ -133,6 +140,8 @@ export default function App() {
         onSync={() => void runSync()}
         onCancel={() => void cancelOperation()}
         onFilterChange={(f) => void setCompareFilter(f)}
+        onSelectFolder={(path) => void selectCompareFolder(path)}
+        onFolderAction={(action, path, deletes) => void handleFolderAction(action, path, deletes)}
         onToggleIncluded={(id, included) => void toggleRowIncluded(id, included)}
         onSelectRow={selectRow}
         onPairIndexChange={setActivePairIndex}
@@ -152,7 +161,7 @@ export default function App() {
 
       <SyncConfirmModal
         open={showDeleteConfirm}
-        deleteCount={compareStats?.deletes ?? 0}
+        deleteCount={pendingSyncDeletes}
         onConfirm={() => void confirmSync()}
         onCancel={cancelSyncConfirm}
       />

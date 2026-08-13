@@ -27,12 +27,44 @@ describe('classify', () => {
   it('detects ADS-only diff', () => {
     const left = side({
       relPath: 'a.txt',
-      adsManifest: [{ name: 'Zone.Identifier', size: 10 }],
+      adsManifest: [{ name: 'parameters', size: 10 }],
     })
     const right = side({ relPath: 'a.txt' })
     const row = classifyPair('pair', 'a.txt', left, right, job)
     expect(row.category).toBe('adsDiff')
     expect(row.action).toBe('UpdateStreamsOnly')
+  })
+
+  it('ignores Zone.Identifier and compare-cache streams by default', () => {
+    const left = side({
+      relPath: 'a.txt',
+      adsManifest: [
+        { name: 'Zone.Identifier', size: 26 },
+        { name: 'MD5', size: 40 },
+      ],
+    })
+    const right = side({ relPath: 'a.txt' })
+    const row = classifyPair('pair', 'a.txt', left, right, job)
+    expect(row.category).toBe('equal')
+    expect(row.action).toBe('Skip')
+    expect(row.adsDelta.equal).toBe(true)
+  })
+
+  it('still flags a real stream when an ignored stream is also present', () => {
+    const left = side({
+      relPath: 'a.txt',
+      adsManifest: [
+        { name: 'Zone.Identifier', size: 26 },
+        { name: 'parameters', size: 12 },
+      ],
+    })
+    const right = side({
+      relPath: 'a.txt',
+      adsManifest: [{ name: 'Zone.Identifier', size: 26 }],
+    })
+    const row = classifyPair('pair', 'a.txt', left, right, job)
+    expect(row.category).toBe('adsDiff')
+    expect(row.adsDelta.removed).toBe(1)
   })
 
   it('plans mirror delete for right-only', () => {
@@ -56,6 +88,27 @@ describe('classify', () => {
     )
     expect(delta.added).toBe(1)
     expect(delta.equal).toBe(false)
+  })
+
+  it('does not treat directory mtime as a file Update', () => {
+    const left = side({ relPath: 'dir', isDir: true, dataSize: 0, mtimeMs: 1000 })
+    const right = side({ relPath: 'dir', isDir: true, dataSize: 0, mtimeMs: 9999 })
+    const row = classifyPair('pair', 'dir', left, right, job)
+    expect(row.category).toBe('equal')
+    expect(row.action).toBe('Skip')
+  })
+
+  it('flags directory ADS diffs as stream-only', () => {
+    const left = side({
+      relPath: 'dir',
+      isDir: true,
+      dataSize: 0,
+      adsManifest: [{ name: 'notes', size: 4 }],
+    })
+    const right = side({ relPath: 'dir', isDir: true, dataSize: 0, mtimeMs: 9999 })
+    const row = classifyPair('pair', 'dir', left, right, job)
+    expect(row.category).toBe('adsDiff')
+    expect(row.action).toBe('UpdateStreamsOnly')
   })
 
   it('counts equals that were not stored as rows', () => {

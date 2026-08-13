@@ -6,7 +6,9 @@ import type {
   CompareFilter,
   CompareRow,
   CompareStats,
+  FolderTreeNode,
   SyncProgress,
+  SyncSummary,
 } from '../schemas/compare'
 
 export type AppReadyResponse = {
@@ -63,6 +65,9 @@ export type CompareRunResponse = {
 }
 
 export type CompareGetRowsResponse = { rows: CompareRow[]; total: number }
+export type CompareGetTreeResponse = { root: FolderTreeNode }
+
+export type CompareDropResponse = { dropped: number; stats: CompareStats }
 
 export type SyncRunResponse = { syncRunId: string }
 
@@ -71,7 +76,7 @@ export type SyncEvent =
   | { type: 'compare:done'; runId: string; stats: CompareStats }
   | { type: 'sync:progress'; syncRunId: string; progress: SyncProgress }
   | { type: 'sync:itemDone'; syncRunId: string; rowId: string; ok: boolean; error?: string }
-  | { type: 'sync:done'; syncRunId: string; summary: { succeeded: number; failed: number; cancelled: boolean } }
+  | { type: 'sync:done'; syncRunId: string; summary: SyncSummary }
 
 export type MyFileSyncApi = {
   ready: () => Promise<Result<AppReadyResponse>>
@@ -96,15 +101,29 @@ export type MyFileSyncApi = {
     offset: number
     limit: number
     filter?: CompareFilter
+    pathPrefix?: string
   }) => Promise<Result<CompareGetRowsResponse>>
+  compareGetTree: (req: {
+    runId: string
+    filter?: CompareFilter
+  }) => Promise<Result<CompareGetTreeResponse>>
   compareCancel: (req?: { runId?: string }) => Promise<Result<{ ok: true }>>
   compareSetRowIncluded: (req: {
     runId: string
     rowId: string
     included: boolean
   }) => Promise<Result<{ ok: true; stats?: CompareStats }>>
-  syncRun: (req: { jobId: string; runId: string }) => Promise<Result<SyncRunResponse>>
-  syncCancel: (req: { syncRunId: string }) => Promise<Result<{ ok: true }>>
+  compareDrop: (req: {
+    runId: string
+    pathPrefix?: string
+    folderName?: string
+  }) => Promise<Result<CompareDropResponse>>
+  syncRun: (req: {
+    jobId: string
+    runId: string
+    pathPrefix?: string
+  }) => Promise<Result<SyncRunResponse>>
+  syncCancel: (req?: { syncRunId?: string }) => Promise<Result<{ ok: true }>>
   syncGetProgress: (req: { syncRunId: string }) => Promise<Result<SyncProgress>>
   onSyncEvent: (listener: (event: SyncEvent) => void) => () => void
   adsList: (req: AdsListRequest) => Promise<Result<AdsListResponse>>

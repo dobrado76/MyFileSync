@@ -1,9 +1,5 @@
-import { isSystemSkipPath } from '@shared/compare/filters'
 import type { CompareRow } from '@shared/schemas/compare'
-import type { JobFile } from '@shared/schemas/job'
 import type { CompareRowStore } from './rowStore'
-import fs from 'node:fs/promises'
-import path from 'node:path'
 
 export type MoveIndexEntry = {
   id: string
@@ -166,80 +162,18 @@ export function toMovedRow(deleteRow: CompareRow, createRow: CompareRow, kind: '
   }
 }
 
-type TreeIndex = {
-  byName: Map<string, string[]>
-  bySizeTime: Map<string, string[]>
-}
-
-function treeNameKey(size: number, mtimeMs: number, name: string): string {
-  return `${size}|${timeKey(mtimeMs)}|${name}`
-}
-
-function treeFpKey(size: number, mtimeMs: number): string {
-  return `${size}|${timeKey(mtimeMs)}`
-}
-
-async function indexTree(absRoot: string, relRoot: string): Promise<TreeIndex> {
-  const byName = new Map<string, string[]>()
-  const bySizeTime = new Map<string, string[]>()
-  const start = relRoot ? path.join(absRoot, relRoot) : absRoot
-  const stack = [{ abs: start, rel: relRoot }]
-
-  function add(map: Map<string, string[]>, key: string, rel: string): void {
-    const list = map.get(key) ?? []
-    list.push(rel)
-    map.set(key, list)
-  }
-
-  while (stack.length > 0) {
-    const cur = stack.pop()
-    if (!cur) break
-    let dir
-    try {
-      dir = await fs.opendir(cur.abs)
-    } catch {
-      continue
-    }
-    for await (const entry of dir) {
-      const rel = cur.rel ? `${cur.rel.replace(/\\/g, '/')}/${entry.name}` : entry.name
-      if (isSystemSkipPath(rel)) continue
-      const abs = path.join(cur.abs, entry.name)
-      let stat
-      try {
-        stat = await fs.lstat(abs)
-      } catch {
-        continue
-      }
-      if (stat.isSymbolicLink()) continue
-      if (stat.isDirectory()) {
-        stack.push({ abs, rel })
-        continue
-      }
-      add(byName, treeNameKey(stat.size, stat.mtimeMs, entry.name.toLowerCase()), rel)
-      add(bySizeTime, treeFpKey(stat.size, stat.mtimeMs), rel)
-    }
-  }
-
-  return { byName, bySizeTime }
-}
-
-function takeUnique(list: string[] | undefined, used: Set<string>): string | undefined {
-  const open = (list ?? []).filter((rel) => !used.has(rel))
-  return open.length === 1 ? open[0] : undefined
-}
-
 /**
- * Pair Create/Delete rows in the compare store. Also looks inside collapsed
- * source-only folders for files that were moved into a new directory.
+ * Pair Create/Delete rows already in the compare store. Does not walk the disk —
+ * collapsed new folders stay one Create (BackupMirror only paired listed Add+Remove).
  */
-export async function applyMoveDetection(store: CompareRowStore, job: JobFile): Promise<number> {
-  if (!job.behavior.detectMovedRenamed) return 0
+export async function applyMoveDetection(store: CompareRowStore): Promise<number> {
+  const stats = store.getStats()
+  if (stats.creates === 0 || stats.deletes === 0) return 0
 
   const creates: MoveIndexEntry[] = []
   const deletes: MoveIndexEntry[] = []
   const createRows = new Map<string, CompareRow>()
   const deleteRows = new Map<string, CompareRow>()
-  const createDirs: MoveIndexEntry[] = []
 
   for await (const row of store.iterateAll()) {
     const entry = entryFromRow(row)
@@ -247,7 +181,6 @@ export async function applyMoveDetection(store: CompareRowStore, job: JobFile): 
     if (entry.action === 'Create') {
       creates.push(entry)
       createRows.set(row.id, row)
-      if (entry.isDir) createDirs.push(entry)
     } else {
       deletes.push(entry)
       deleteRows.set(row.id, row)
@@ -257,46 +190,6 @@ export async function applyMoveDetection(store: CompareRowStore, job: JobFile): 
   if (creates.length === 0 || deletes.length === 0) return 0
 
   const pairs = pairMoves(creates, deletes)
-  const usedCreate = new Set(pairs.map((p) => p.createId))
-  const usedDelete = new Set(pairs.map((p) => p.deleteId))
-
-  const unusedCreateDirs = createDirs.filter((d) => !usedCreate.has(d.id))
-  if (unusedCreateDirs.length > 0) {
-    const indexes = new Map<string, TreeIndex>()
-    const usedFound = new Set<string>()
-    for (const dir of unusedCreateDirs) {
-      const pair = job.pairs.find((p) => p.id === dir.pairId)
-      if (!pair) continue
-      indexes.set(dir.id, await indexTree(pair.left, dir.relPath))
-    }
-
-    for (const del of deletes) {
-      if (del.isDir || usedDelete.has(del.id)) continue
-      for (const dir of unusedCreateDirs) {
-        if (dir.pairId !== del.pairId) continue
-        const index = indexes.get(dir.id)
-        if (!index) continue
-        const found =
-          takeUnique(index.byName.get(treeNameKey(del.size, del.mtimeMs, del.name)), usedFound) ??
-          takeUnique(index.bySizeTime.get(treeFpKey(del.size, del.mtimeMs)), usedFound)
-        if (!found) continue
-        const createRow = createRows.get(dir.id)
-        const deleteRow = deleteRows.get(del.id)
-        if (!createRow || !deleteRow) break
-        usedFound.add(found)
-        pairs.push({
-          deleteId: del.id,
-          createId: dir.id,
-          newRelPath: found,
-          oldRelPath: del.relPath,
-          kind: 'Move',
-        })
-        usedDelete.add(del.id)
-        break
-      }
-    }
-  }
-
   if (pairs.length === 0) return 0
 
   const dropIds = new Set<string>()
@@ -310,15 +203,7 @@ export async function applyMoveDetection(store: CompareRowStore, job: JobFile): 
     moved.relPath = pair.newRelPath
     moved.fromRelPath = pair.oldRelPath
     replacements.set(pair.deleteId, moved)
-    const createIsDir = Boolean(createRow.left?.isDir)
-    const deleteIsDir = Boolean(deleteRow.right?.isDir ?? deleteRow.left?.isDir)
-    if (createIsDir && !deleteIsDir) {
-      moved.left = deleteRow.right
-        ? { ...deleteRow.right, isDir: false }
-        : deleteRow.left
-    } else {
-      dropIds.add(pair.createId)
-    }
+    dropIds.add(pair.createId)
   }
 
   await store.applyReplacements(dropIds, replacements)

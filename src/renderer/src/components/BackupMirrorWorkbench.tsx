@@ -1,9 +1,10 @@
 import type { JobFile, JobSummary } from '@shared/schemas/job'
-import type { CompareFilter, CompareRow, CompareStats } from '@shared/schemas/compare'
+import type { CompareFilter, CompareRow, CompareStats, FolderTreeNode } from '@shared/schemas/compare'
 import { CompareGrid } from './CompareGrid'
 import { FilterManager } from './FilterManager'
 import { RowDetailPanel } from './RowDetailPanel'
 import type { LogEntry } from '../store/workbenchStore'
+import type { TreeFolderAction } from './CompareFolderTree'
 
 export type MainTab = 'options' | 'compare' | 'filters' | 'log'
 
@@ -13,6 +14,8 @@ type BackupMirrorWorkbenchProps = {
   activePairIndex: number
   mainTab: MainTab
   compareRows: CompareRow[]
+  compareFolderTree: FolderTreeNode | null
+  comparePathPrefix: string
   compareFilter: CompareFilter
   compareBusy: boolean
   compareStats: CompareStats | null
@@ -38,6 +41,8 @@ type BackupMirrorWorkbenchProps = {
   onSync: () => void
   onCancel: () => void
   onFilterChange: (filter: CompareFilter) => void
+  onSelectFolder: (path: string) => void
+  onFolderAction: (action: TreeFolderAction, path: string, deletes: number) => void
   onToggleIncluded: (rowId: string, included: boolean) => void
   onSelectRow: (row: CompareRow | null) => void
   onPairIndexChange: (index: number) => void
@@ -50,6 +55,8 @@ export function BackupMirrorWorkbench(props: BackupMirrorWorkbenchProps) {
     activePairIndex,
     mainTab,
     compareRows,
+    compareFolderTree,
+    comparePathPrefix,
     compareFilter,
     compareBusy,
     compareStats,
@@ -75,6 +82,8 @@ export function BackupMirrorWorkbench(props: BackupMirrorWorkbenchProps) {
     onSync,
     onCancel,
     onFilterChange,
+    onSelectFolder,
+    onFolderAction,
     onToggleIncluded,
     onSelectRow,
     onPairIndexChange,
@@ -304,7 +313,12 @@ export function BackupMirrorWorkbench(props: BackupMirrorWorkbenchProps) {
                   rows={compareRows}
                   filter={compareFilter}
                   busy={compareBusy || syncBusy}
+                  folderTree={compareFolderTree}
+                  pathPrefix={comparePathPrefix}
+                  rootLabel={pair?.left.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || 'All folders'}
                   onFilterChange={onFilterChange}
+                  onSelectFolder={onSelectFolder}
+                  onFolderAction={onFolderAction}
                   onToggleIncluded={onToggleIncluded}
                   onSelectRow={onSelectRow}
                   onRowDoubleClick={onSelectRow}
@@ -314,77 +328,6 @@ export function BackupMirrorWorkbench(props: BackupMirrorWorkbenchProps) {
                 {selectedRow ? (
                   <RowDetailPanel row={selectedRow} onClose={() => onSelectRow(null)} />
                 ) : null}
-
-                <div className="bm-options-bar">
-                  <label className="check-row">
-                    <input
-                      type="checkbox"
-                      checked={activeJob.behavior.detectMovedRenamed}
-                      onChange={(e) =>
-                        onChangeJob({ behavior: { ...activeJob.behavior, detectMovedRenamed: e.target.checked } })
-                      }
-                    />
-                    Try to detect moved
-                  </label>
-                  <label className="check-row">
-                    <input
-                      type="checkbox"
-                      checked={activeJob.behavior.minimizeRefresh ?? true}
-                      onChange={(e) =>
-                        onChangeJob({ behavior: { ...activeJob.behavior, minimizeRefresh: e.target.checked } })
-                      }
-                    />
-                    Minimize Refresh
-                  </label>
-                  <label className="check-row">
-                    <input
-                      type="checkbox"
-                      checked={activeJob.behavior.autoExpandCompareTree}
-                      onChange={(e) =>
-                        onChangeJob({ behavior: { ...activeJob.behavior, autoExpandCompareTree: e.target.checked } })
-                      }
-                    />
-                    Auto Expand tree
-                  </label>
-                  <label className="check-row">
-                    <input
-                      type="checkbox"
-                      checked={activeJob.vss.enabled}
-                      onChange={(e) => onChangeJob({ vss: { enabled: e.target.checked } })}
-                    />
-                    Use Volume Shadow Copy
-                  </label>
-                  <label className="check-row">
-                    <input
-                      type="checkbox"
-                      checked={activeJob.behavior.autoSyncAfterCompare}
-                      onChange={(e) =>
-                        onChangeJob({ behavior: { ...activeJob.behavior, autoSyncAfterCompare: e.target.checked } })
-                      }
-                    />
-                    Auto Backup
-                  </label>
-                  <label className="check-row">
-                    <input
-                      type="checkbox"
-                      checked={activeJob.compare.fastFolderCompare}
-                      onChange={(e) =>
-                        onChangeJob({ compare: { ...activeJob.compare, fastFolderCompare: e.target.checked } })
-                      }
-                    />
-                    Fast Compare
-                  </label>
-                  <label className="check-row">
-                    <input
-                      type="checkbox"
-                      checked={activeJob.behavior.archiveFlagScanOnly}
-                      onChange={(e) =>
-                        onChangeJob({ behavior: { ...activeJob.behavior, archiveFlagScanOnly: e.target.checked } })
-                      }
-                    />
-                    Use Archive Flag
-                  </label>
-                </div>
 
                 <div className="bm-run-bar">
                   <button
@@ -483,18 +426,6 @@ export function BackupMirrorWorkbench(props: BackupMirrorWorkbenchProps) {
                   }
                 />
                 Hash content only when size or date/time already differs
-              </label>
-              <label className="check-row">
-                <input
-                  type="checkbox"
-                  checked={activeJob.compare.fastFolderCompare}
-                  onChange={(e) =>
-                    onChangeJob({
-                      compare: { ...activeJob.compare, fastFolderCompare: e.target.checked },
-                    })
-                  }
-                />
-                Fast folder compare (skip subtree when ADS folder stats match)
               </label>
               <label className="check-row">
                 <input

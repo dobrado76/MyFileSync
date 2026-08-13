@@ -6,6 +6,7 @@ import { createDefaultJob } from '@shared/schemas/job'
 import { getFiles } from '../../../src/main/compare/getFiles'
 import { applyMoveDetection, pairMoves, type MoveIndexEntry } from '../../../src/main/compare/moveDetect'
 import { CompareRowStore } from '../../../src/main/compare/rowStore'
+import { copyFileTimes } from '../../../src/main/win32/times'
 
 function file(
   partial: Pick<MoveIndexEntry, 'id' | 'relPath' | 'action'> & Partial<MoveIndexEntry>,
@@ -88,6 +89,10 @@ describe('pairMoves', () => {
 const temps: string[] = []
 
 async function matchMtime(fromPath: string, toPath: string): Promise<void> {
+  if (process.platform === 'win32') {
+    const copied = await copyFileTimes(fromPath, toPath)
+    if (copied.ok) return
+  }
   const st = await fs.stat(fromPath)
   await fs.utimes(toPath, st.atime, st.mtime)
 }
@@ -117,7 +122,6 @@ describe('applyMoveDetection', () => {
     job.pairs[0]!.left = left
     job.pairs[0]!.right = right
     job.filters.exclude = []
-    job.behavior.detectMovedRenamed = true
 
     const store = new CompareRowStore(path.join(root, 'run.jsonl'))
     await getFiles({
@@ -126,7 +130,7 @@ describe('applyMoveDetection', () => {
       onDiff: (row) => store.append(row),
     })
     await store.close()
-    const n = await applyMoveDetection(store, job)
+    const n = await applyMoveDetection(store)
     expect(n).toBe(1)
 
     const page = await store.getPage(0, 50, 'moved')
@@ -161,7 +165,6 @@ describe('applyMoveDetection', () => {
     job.pairs[0]!.left = left
     job.pairs[0]!.right = right
     job.filters.exclude = []
-    job.behavior.detectMovedRenamed = true
 
     const store = new CompareRowStore(path.join(root, 'run.jsonl'))
     await getFiles({
@@ -170,7 +173,7 @@ describe('applyMoveDetection', () => {
       onDiff: (row) => store.append(row),
     })
     await store.close()
-    const n = await applyMoveDetection(store, job)
+    const n = await applyMoveDetection(store)
     expect(n).toBe(1)
 
     const page = await store.getPage(0, 50, 'moved')
@@ -181,7 +184,7 @@ describe('applyMoveDetection', () => {
     await store.dispose()
   })
 
-  it('pairs a file deleted from the old path with a copy inside a new collapsed folder', async () => {
+  it('does not re-walk a collapsed new folder to pair inner files', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mfs-move-into-'))
     temps.push(root)
     const left = path.join(root, 'left')
@@ -198,7 +201,6 @@ describe('applyMoveDetection', () => {
     job.pairs[0]!.left = left
     job.pairs[0]!.right = right
     job.filters.exclude = []
-    job.behavior.detectMovedRenamed = true
 
     const store = new CompareRowStore(path.join(root, 'run.jsonl'))
     await getFiles({
@@ -207,20 +209,16 @@ describe('applyMoveDetection', () => {
       onDiff: (row) => store.append(row),
     })
     await store.close()
-    const n = await applyMoveDetection(store, job)
-    expect(n).toBe(1)
-
-    const moved = await store.getPage(0, 50, 'moved')
-    expect(moved.rows).toHaveLength(1)
-    expect(moved.rows[0]?.action).toBe('Move')
-    expect(moved.rows[0]?.relPath.replace(/\\/g, '/')).toBe('dest/a.txt')
-    expect(moved.rows[0]?.fromRelPath?.replace(/\\/g, '/')).toBe('a.txt')
+    const n = await applyMoveDetection(store)
+    expect(n).toBe(0)
 
     const all = await store.getPage(0, 50, 'all')
     expect(all.rows.some((row) => row.action === 'Create' && row.relPath.replace(/\\/g, '/') === 'dest')).toBe(
       true,
     )
-    expect(all.rows.some((row) => row.action === 'Delete')).toBe(false)
+    expect(all.rows.some((row) => row.action === 'Delete' && row.relPath.replace(/\\/g, '/') === 'a.txt')).toBe(
+      true,
+    )
     await store.dispose()
   })
 })

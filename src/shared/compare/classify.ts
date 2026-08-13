@@ -1,10 +1,24 @@
-import { manifestsEqual, sortManifest, type AdsManifest } from '../ads/paths'
+import { manifestsEqual, sortManifest, withoutIgnoredStreams, type AdsManifest } from '../ads/paths'
 import type { CompareCategory, CompareFilter, CompareRow, CompareStats, SideRecord, SideSummary, SyncActionType, SyncDirection, AdsDelta } from '../schemas/compare'
 import type { JobFile } from '../schemas/job'
 
-export function computeAdsDelta(left?: AdsManifest, right?: AdsManifest): AdsDelta {
-  const l = sortManifest(left ?? [])
-  const r = sortManifest(right ?? [])
+/** Streams compare/sync should ignore: exclude list, and app-cache streams unless the job writes them. */
+export function adsIgnoredStreamNames(job: JobFile): readonly string[] | 'all' {
+  if (!job.ads.syncAllStreams) return 'all'
+  const names = [...job.ads.excludeStreams]
+  if (!job.ads.writeCacheToAds) {
+    names.push(job.ads.cacheStreamNames.fileHash, ...job.ads.cacheStreamNames.folderStats)
+  }
+  return names
+}
+
+export function computeAdsDelta(
+  left?: AdsManifest,
+  right?: AdsManifest,
+  ignored: readonly string[] | 'all' = [],
+): AdsDelta {
+  const l = sortManifest(withoutIgnoredStreams(left ?? [], ignored))
+  const r = sortManifest(withoutIgnoredStreams(right ?? [], ignored))
   const leftMap = new Map(l.map((e) => [e.name, e.size]))
   const rightMap = new Map(r.map((e) => [e.name, e.size]))
 
@@ -38,14 +52,28 @@ export function toSideSummary(record: SideRecord): SideSummary {
   }
 }
 
-export function recordsEqual(a: SideRecord, b: SideRecord, hashContent: boolean): boolean {
+export function recordsEqual(
+  a: SideRecord,
+  b: SideRecord,
+  hashContent: boolean,
+  ignored: readonly string[] | 'all' = [],
+): boolean {
   if (a.isDir !== b.isDir) return false
+  if (a.isDir && b.isDir) {
+    return manifestsEqual(
+      withoutIgnoredStreams(a.adsManifest, ignored),
+      withoutIgnoredStreams(b.adsManifest, ignored),
+    )
+  }
   if (a.dataSize !== b.dataSize) return false
   if (a.mtimeMs !== b.mtimeMs) return false
   if (hashContent && a.primaryHash && b.primaryHash && a.primaryHash !== b.primaryHash) {
     return false
   }
-  return manifestsEqual(a.adsManifest, b.adsManifest)
+  return manifestsEqual(
+    withoutIgnoredStreams(a.adsManifest, ignored),
+    withoutIgnoredStreams(b.adsManifest, ignored),
+  )
 }
 
 export function classifyPair(
@@ -55,7 +83,7 @@ export function classifyPair(
   right: SideRecord | undefined,
   job: JobFile,
 ): CompareRow {
-  const adsDelta = computeAdsDelta(left?.adsManifest, right?.adsManifest)
+  const adsDelta = computeAdsDelta(left?.adsManifest, right?.adsManifest, adsIgnoredStreamNames(job))
   const hashContent =
     job.compare.method === 'content' ||
     (job.compare.hashWhenSizeOrTimeDiffers && Boolean(left && right))
@@ -64,17 +92,21 @@ export function classifyPair(
   if (!left && right) category = 'rightOnly'
   else if (left && !right) category = 'leftOnly'
   else if (left && right) {
-    const dataEqual =
-      left.dataSize === right.dataSize &&
-      left.mtimeMs === right.mtimeMs &&
-      (!hashContent || !left.primaryHash || !right.primaryHash || left.primaryHash === right.primaryHash)
-    const adsEqual = adsDelta.equal
-    if (dataEqual && adsEqual) category = 'equal'
-    else if (dataEqual && !adsEqual) category = 'adsDiff'
-    else if (!dataEqual) {
-      if (left.mtimeMs > right.mtimeMs) category = 'leftNewer'
-      else if (right.mtimeMs > left.mtimeMs) category = 'rightNewer'
-      else category = 'contentDiff'
+    if (left.isDir && right.isDir) {
+      category = adsDelta.equal ? 'equal' : 'adsDiff'
+    } else {
+      const dataEqual =
+        left.dataSize === right.dataSize &&
+        left.mtimeMs === right.mtimeMs &&
+        (!hashContent || !left.primaryHash || !right.primaryHash || left.primaryHash === right.primaryHash)
+      const adsEqual = adsDelta.equal
+      if (dataEqual && adsEqual) category = 'equal'
+      else if (dataEqual && !adsEqual) category = 'adsDiff'
+      else if (!dataEqual) {
+        if (left.mtimeMs > right.mtimeMs) category = 'leftNewer'
+        else if (right.mtimeMs > left.mtimeMs) category = 'rightNewer'
+        else category = 'contentDiff'
+      }
     }
   }
 

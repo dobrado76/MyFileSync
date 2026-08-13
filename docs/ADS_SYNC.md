@@ -41,7 +41,7 @@ Win32 listing and copy (koffi + stream paths):
 
 | Operation | Mechanism |
 |-----------|-----------|
-| List | `FindFirstStreamW` / `FindNextStreamW` |
+| List | `GetFileInformationByHandleEx(FileStreamInfo)` after `CreateFile` with **FILE_READ_ATTRIBUTES** only (never `FILE_READ_DATA` / `$DATA`) |
 | Exists | `GetFileAttributesW` on `path:streamName:$DATA` |
 | Read/write/delete | Node `fs` on stream path or `DeleteFileW` |
 | Path form | `buildStreamPath(base, name)` → `\\?\` prefix when long |
@@ -65,8 +65,8 @@ After stream-only writes, restore host **atime/mtime** so compare-by-time does n
 
 Per side, per host:
 
-1. Stat `$DATA`: size, mtime, optional hash.
-2. `listStreams(host)` → manifest (name + size).
+1. Size + mtime of `$DATA` from **FindFirstFile** (directory index — the file is not opened).
+2. `listStreams(host)` → manifest (name + size) via MFT `FileStreamInfo`. Does not read `$DATA`. Named ADS are tiny (integers / short text) and are only opened if a cache/preview path reads that stream.
 3. Classify:
    - **Equal** — `$DATA` equal per job rules AND manifests equal (sizes; optional per-stream hash).
    - **Update** — `$DATA` differs OR manifest differs.
@@ -125,7 +125,16 @@ When both sides have streams the other lacks:
 | `cacheStreamNames.fileHash` | `"MD5"` |
 | `cacheStreamNames.folderStats` | BackupMirror set |
 
-When `writeCacheToAds` is false, optionally **exclude** known cache stream names from sync (so app does not propagate compare metadata unless user wants it).
+**Compare and sync use the same ignore list.** Excluded streams (and compare-cache streams when `writeCacheToAds` is false) are not counted as adsDiff and are not copied or deleted. Otherwise a default `Zone.Identifier` exclude would leave every downloaded file “different” forever.
+
+When `writeCacheToAds` is false, known cache stream names are ignored so leftover BackupMirror `MD5` / folder-stat streams do not fill the change list.
+
+### NTFS → NTFS stream-only update (`UpdateStreamsOnly`)
+
+1. Copy each non-ignored source stream onto dest.
+2. **Mirror:** delete dest streams that are not on the source (ignored names are left alone).
+3. Restore dest host atime/mtime so size+time compare does not false-positive.
+4. Verify non-ignored manifests match.
 
 ## Directory hosts
 

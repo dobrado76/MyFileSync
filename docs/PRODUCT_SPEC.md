@@ -78,7 +78,7 @@
 | Surface | Purpose |
 |---------|---------|
 | **Jobs** | List/create/edit jobs and folder pairs |
-| **Compare** | Diff grid and filters |
+| **Compare** | Folder tree + two-pane change list |
 | **Filters** | Exclude / include rules |
 | **Log** | Run messages |
 | **Settings** | Updates folder, export/import |

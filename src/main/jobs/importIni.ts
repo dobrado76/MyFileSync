@@ -54,16 +54,11 @@ export async function importIni(filePath: string): Promise<Result<IniImportResul
 
     switch (key) {
       case 'DetectMoved':
-        job.behavior.detectMovedRenamed = parseBool(value)
-        break
-      case 'AutoExpand':
-        job.behavior.autoExpandCompareTree = parseBool(value)
+      case 'AutoBackup':
+      case 'MinimizeRefresh':
         break
       case 'UseVolumeShadowCopy':
         job.vss.enabled = parseBool(value)
-        break
-      case 'AutoBackup':
-        job.behavior.autoSyncAfterCompare = parseBool(value)
         break
       case 'FastCompare':
         job.compare.fastFolderCompare = parseBool(value)

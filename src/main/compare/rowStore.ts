@@ -12,7 +12,9 @@ import {
   type CompareFilter,
   type CompareRow,
   type CompareStats,
+  type FolderTreeNode,
 } from '@shared/schemas/compare'
+import { buildFolderTree, pathMatchesPrefix } from '@shared/compare/folderTree'
 import type { JobFile } from '@shared/schemas/job'
 
 const CATEGORY_CODE: Record<CompareCategory, number> = {
@@ -126,11 +128,23 @@ export class CompareRowStore {
     offset: number,
     limit: number,
     filter: CompareFilter,
+    pathPrefix = '',
   ): Promise<{ rows: CompareRow[]; total: number }> {
     const rows: CompareRow[] = []
     let total = 0
     for (let i = 0; i < this.count; i++) {
       if (!this.matches(i, filter)) continue
+      if (pathPrefix) {
+        const row = await this.readIndex(i)
+        if (!row) continue
+        const inFolder =
+          pathMatchesPrefix(row.relPath, pathPrefix) ||
+          pathMatchesPrefix(row.fromRelPath ?? '', pathPrefix)
+        if (!inFolder) continue
+        if (total >= offset && rows.length < limit) rows.push(row)
+        total++
+        continue
+      }
       if (total >= offset && rows.length < limit) {
         const row = await this.readIndex(i)
         if (row) rows.push(row)
@@ -138,6 +152,26 @@ export class CompareRowStore {
       total++
     }
     return { rows, total }
+  }
+
+  async getFolderTree(filter: CompareFilter): Promise<FolderTreeNode> {
+    const rows: CompareRow[] = []
+    for (let i = 0; i < this.count; i++) {
+      if (!this.matches(i, filter)) continue
+      const row = await this.readIndex(i)
+      if (row) rows.push(row)
+    }
+    return buildFolderTree(rows)
+  }
+
+  async dropMatching(match: (row: CompareRow) => boolean): Promise<number> {
+    const dropIds = new Set<string>()
+    for await (const row of this.iterateAll()) {
+      if (match(row)) dropIds.add(row.id)
+    }
+    if (dropIds.size === 0) return 0
+    await this.applyReplacements(dropIds, new Map())
+    return dropIds.size
   }
 
   async *iterateIncluded(): AsyncGenerator<CompareRow> {

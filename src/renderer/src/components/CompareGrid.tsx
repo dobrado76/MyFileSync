@@ -1,4 +1,6 @@
-import type { CompareFilter, CompareRow } from '@shared/schemas/compare'
+import { useCallback, useRef, useState, type PointerEvent } from 'react'
+import type { CompareFilter, CompareRow, FolderTreeNode } from '@shared/schemas/compare'
+import { CompareFolderTree, type TreeFolderAction } from './CompareFolderTree'
 
 function adsHint(row: CompareRow): string {
   if (row.adsDelta.equal) return ''
@@ -33,7 +35,12 @@ type CompareGridProps = {
   rows: CompareRow[]
   filter: CompareFilter
   busy: boolean
+  folderTree: FolderTreeNode | null
+  pathPrefix: string
+  rootLabel: string
   onFilterChange: (filter: CompareFilter) => void
+  onSelectFolder: (path: string) => void
+  onFolderAction: (action: TreeFolderAction, path: string, deletes: number) => void
   onToggleIncluded: (rowId: string, included: boolean) => void
   onSelectRow: (row: CompareRow) => void
   onRowDoubleClick: (row: CompareRow) => void
@@ -79,16 +86,56 @@ const FILTER_OPTIONS: Array<{ id: CompareFilter; label: string; tooltip: string 
   },
 ]
 
+const TREE_MIN = 140
+const TREE_DEFAULT = 220
+
 export function CompareGrid({
   rows,
   filter,
   busy,
+  folderTree,
+  pathPrefix,
+  rootLabel,
   onFilterChange,
+  onSelectFolder,
+  onFolderAction,
   onToggleIncluded,
   onSelectRow,
   onRowDoubleClick,
   selectedRowId,
 }: CompareGridProps) {
+  const emptyMessage = pathPrefix
+    ? `No changes in ${pathPrefix}.`
+    : 'Set source and target folders, then click Compare.'
+  const splitRef = useRef<HTMLDivElement>(null)
+  const [treeWidth, setTreeWidth] = useState(TREE_DEFAULT)
+  const [dragging, setDragging] = useState(false)
+
+  const onSplitterPointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    const split = splitRef.current
+    if (!split) return
+    const startX = event.clientX
+    const startWidth = treeWidth
+    const max = Math.max(TREE_MIN, Math.floor(split.clientWidth * 0.55))
+    const target = event.currentTarget
+    target.setPointerCapture(event.pointerId)
+    setDragging(true)
+
+    const onMove = (move: globalThis.PointerEvent) => {
+      setTreeWidth(Math.min(max, Math.max(TREE_MIN, startWidth + move.clientX - startX)))
+    }
+    const onUp = () => {
+      setDragging(false)
+      target.removeEventListener('pointermove', onMove)
+      target.removeEventListener('pointerup', onUp)
+      target.removeEventListener('pointercancel', onUp)
+    }
+    target.addEventListener('pointermove', onMove)
+    target.addEventListener('pointerup', onUp)
+    target.addEventListener('pointercancel', onUp)
+  }, [treeWidth])
+
   return (
     <section className="compare-panel">
       <div className="compare-filter-bar">
@@ -109,56 +156,86 @@ export function CompareGrid({
             </button>
           ))}
         </div>
+        {pathPrefix ? (
+          <button
+            type="button"
+            className="compare-folder-chip"
+            title="Show all folders"
+            onClick={() => onSelectFolder('')}
+          >
+            {pathPrefix}
+            <span aria-hidden="true"> ×</span>
+          </button>
+        ) : null}
       </div>
 
-      <div className="compare-grid-wrap">
-        <table className="compare-grid compare-grid-bm">
-          <thead>
-            <tr>
-              <th className="col-check">☑</th>
-              <th className="col-source">Source</th>
-              <th className="col-action">Action</th>
-              <th className="col-target">Target</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length === 0 ? (
+      <div className={`compare-split ${dragging ? 'compare-split-dragging' : ''}`} ref={splitRef}>
+        <div className="compare-tree-pane" style={{ width: treeWidth }}>
+          <CompareFolderTree
+            root={folderTree}
+            selectedPath={pathPrefix}
+            rootLabel={rootLabel}
+            busy={busy}
+            onSelect={onSelectFolder}
+            onFolderAction={onFolderAction}
+          />
+        </div>
+        <div
+          className="compare-split-gutter"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize folder tree"
+          onPointerDown={onSplitterPointerDown}
+        />
+        <div className="compare-grid-wrap">
+          <table className="compare-grid compare-grid-bm">
+            <thead>
               <tr>
-                <td colSpan={4} className="empty-row">
-                  Set source and target folders, then click Compare.
-                </td>
+                <th className="col-check">☑</th>
+                <th className="col-source">Source</th>
+                <th className="col-action">Action</th>
+                <th className="col-target">Target</th>
               </tr>
-            ) : (
-              rows.map((row) => {
-                const ads = adsHint(row)
-                return (
-                  <tr
-                    key={row.id}
-                    className={`${rowClass(row)} ${selectedRowId === row.id ? 'row-selected' : ''}`}
-                    onClick={() => onSelectRow(row)}
-                    onDoubleClick={() => onRowDoubleClick(row)}
-                  >
-                    <td>
-                      <input
-                        type="checkbox"
-                        checked={row.included}
-                        disabled={row.action === 'Skip'}
-                        onChange={(e) => onToggleIncluded(row.id, e.target.checked)}
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                    </td>
-                    <td className="path-cell">
-                      {row.leftPath ?? (row.left ? row.relPath : '—')}
-                      {ads ? <span className="ads-hint"> · {ads}</span> : null}
-                    </td>
-                    <td className="action-cell">{row.action}</td>
-                    <td className="path-cell">{row.rightPath ?? (row.right ? row.relPath : '—')}</td>
-                  </tr>
-                )
-              })
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {rows.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="empty-row">
+                    {emptyMessage}
+                  </td>
+                </tr>
+              ) : (
+                rows.map((row) => {
+                  const ads = adsHint(row)
+                  return (
+                    <tr
+                      key={row.id}
+                      className={`${rowClass(row)} ${selectedRowId === row.id ? 'row-selected' : ''}`}
+                      onClick={() => onSelectRow(row)}
+                      onDoubleClick={() => onRowDoubleClick(row)}
+                    >
+                      <td>
+                        <input
+                          type="checkbox"
+                          checked={row.included}
+                          disabled={row.action === 'Skip'}
+                          onChange={(e) => onToggleIncluded(row.id, e.target.checked)}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      </td>
+                      <td className="path-cell">
+                        {row.leftPath ?? (row.left ? row.relPath : '—')}
+                        {ads ? <span className="ads-hint"> · {ads}</span> : null}
+                      </td>
+                      <td className="action-cell">{row.action}</td>
+                      <td className="path-cell">{row.rightPath ?? (row.right ? row.relPath : '—')}</td>
+                    </tr>
+                  )
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </section>
   )

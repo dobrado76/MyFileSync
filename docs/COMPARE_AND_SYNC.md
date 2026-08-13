@@ -36,7 +36,8 @@ flowchart TD
 - Output: **diff** rows streamed to a JSONL store (never a giant in-memory array). Equals are counted only.
 - A folder missing on the other side is **one** Create or Delete. Children are not listed; sync copies or removes the tree (filters applied during copy).
 - File-level diffs are one row each. The grid pages from disk.
-- Per folder: source directories, source files, then target-only names.
+- After compare, a **folder tree** is built from those diff rows (no extra walk). Clicking a folder filters the grid to that path prefix (`compare:getRows` `pathPrefix`).
+- Per folder: **FindFirstFile** on source and target (size + mtime from the directory index — files are not opened). Then ADS only if `$DATA` size and time already match. **Folders that exist on both sides compare ADS only** — directory mtime is ignored (adding a file updates the folder clock and must not recopy the tree).
 - Skip: `$…` segments and `RECYCLER` (BackupMirror `\$` / `RECYCLER`).
 - Symlinks: not followed. Junctions are followed (with a cycle guard).
 
@@ -82,16 +83,16 @@ type SideRecord = {
 
 ## Move/rename detection
 
-Enabled by default (`behavior.detectMovedRenamed`). After the paired walk:
+Enabled after the paired walk:
 
-1. Pair `Delete` + `Create` with the same size and mtime (NTFS `Move` preserves both). Same name → **Move**; same parent folder → **Rename**.
-2. Whole folders that were collapsed to one Create/Delete are paired the same way, then sync uses `Directory.Move`.
-3. Files moved into a **new** folder are found by walking that source folder for a size+mtime match.
+1. Pair `Delete` + `Create` **already in the change list** with the same size and mtime (NTFS `Move` preserves both). Same name → **Move**; same parent folder → **Rename**.
+2. Whole folders that were collapsed to one Create/Delete are paired the same way when the folder name matches, then sync uses `Directory.Move`.
+3. Files inside a **new collapsed folder** are not listed, so they are not paired as individual moves (re-walking those trees after compare was a second crawl).
 4. Sync runs moves first, then copies, then deletes. Copy skips a destination that already matches size+time.
 
 ## Fast folder compare
 
-When `compare.fastFolderCompare` && `ads.writeCacheToAds`:
+Not in the UI. If a job JSON still has `compare.fastFolderCompare` and `ads.writeCacheToAds`:
 
 1. Read folder aggregate ADS on left/right directory hosts.
 2. If `FileCount`, `FolderCount`, `FileSize`, … all match, skip recursion (BackupMirror `GetFilesFast`).
@@ -116,9 +117,11 @@ flowchart LR
 ```
 
 - Order: **moves, then creates/updates, then deletes**. A detected move is `rename` on the target (copy+delete only if the volumes differ).
+- After each file copy, dest last-write time is set from source with **SetFileTime** (not Node `utimes`). CopyFileEx uses `\\?\` long paths.
+- Folder **Create** copies the tree. Folder **Update** / ADS-only never recopies children.
 - `parallelism.copyPerDevice`: max concurrent copies per volume root (FFS-style).
 - Progress: `{ phase, done, total, currentPath, bytes, etaMs }` events.
-- Cancel: cooperative flag checked between actions.
+- Cancel: abort flag is set immediately (CopyFileEx `pbCancel`). The sync loop yields between items so Cancel IPC is not blocked; in-flight items are not counted as failed. Cancel skips the compare-row rewrite so the status bar can clear as soon as copies stop.
 
 ### VSS
 
@@ -171,7 +174,6 @@ Enables:
 | Exclude glob | `*.tmp`, `thumbs.db`, `!Thumbnails` (any depth relative to the pair root; `!` is literal) |
 | Exclude this path | `/!Thumbnails` (root instance only) or `models/!Thumbnails` (that relative path only) |
 | Include glob | Optional allow-list |
-| Attributes (archive-only) | `behavior.archiveFlagScanOnly` |
 
 BackupMirror used **exact** filename/path only; MyFileSync uses **minimatch** or equivalent for globs.
 
@@ -183,7 +185,7 @@ Map to `AppError` with codes:
 |------|---------|
 | `io` | Generic failure |
 | `not-allowed` | Read-only folder |
-| `busy` | File locked (suggest VSS) |
+| `busy` | File locked |
 | `validation` | Invalid job |
 | `cancelled` | User cancel |
 

@@ -87,6 +87,30 @@ describe('getFiles', () => {
     expect(result.rows.find((r) => r.relPath === 'trg-only')?.action).toBe('Delete')
   })
 
+  it('does not emit a folder Update when only directory mtime differs', async () => {
+    const { left, right } = await makePair()
+    await fs.mkdir(path.join(left, 'keep'))
+    await fs.mkdir(path.join(right, 'keep'))
+    await fs.writeFile(path.join(left, 'keep', 'a.txt'), 'x')
+    await fs.writeFile(path.join(right, 'keep', 'a.txt'), 'x')
+    const fileTime = new Date('2020-01-01T00:00:00Z')
+    const oldDir = new Date('2020-01-01T00:00:00Z')
+    const newDir = new Date('2024-01-01T00:00:00Z')
+    await fs.utimes(path.join(left, 'keep', 'a.txt'), fileTime, fileTime)
+    await fs.utimes(path.join(right, 'keep', 'a.txt'), fileTime, fileTime)
+    await fs.utimes(path.join(left, 'keep'), oldDir, oldDir)
+    await fs.utimes(path.join(right, 'keep'), newDir, newDir)
+
+    const job = createDefaultJob('test')
+    job.pairs[0]!.left = left
+    job.pairs[0]!.right = right
+    job.filters.exclude = []
+
+    const result = await collect(job)
+    expect(result.rows.map((r) => r.relPath)).toEqual([])
+    expect(result.equalCount).toBeGreaterThanOrEqual(1)
+  })
+
   it('skips target-only names in Update jobs', async () => {
     const { left, right } = await makePair()
     await fs.writeFile(path.join(left, 'keep.txt'), 'a')

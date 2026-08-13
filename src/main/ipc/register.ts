@@ -8,6 +8,8 @@ import {
   adsReadStreamRequestSchema,
   compareCancelRequestSchema,
   compareGetRowsRequestSchema,
+  compareGetTreeRequestSchema,
+  compareDropRequestSchema,
   compareRunRequestSchema,
   compareSetRowIncludedRequestSchema,
   jobIdRequestSchema,
@@ -36,6 +38,8 @@ import { deleteJob, importJobJson, listJobs, loadJob, saveJob } from '../jobs/st
 import { importIni } from '../jobs/importIni'
 import {
   cancelCompareRun,
+  dropCompareRows,
+  getCompareFolderTree,
   getCompareRows,
   getCompareRun,
   runCompare,
@@ -218,7 +222,10 @@ export function registerIpc(appVersion: string): void {
     }
   })
   handle(IPC_CHANNELS.COMPARE_GET_ROWS, compareGetRowsRequestSchema, async (req) =>
-    ok(await getCompareRows(req.runId, req.offset, req.limit, req.filter ?? 'all')),
+    ok(await getCompareRows(req.runId, req.offset, req.limit, req.filter ?? 'all', req.pathPrefix ?? '')),
+  )
+  handle(IPC_CHANNELS.COMPARE_GET_TREE, compareGetTreeRequestSchema, async (req) =>
+    ok({ root: await getCompareFolderTree(req.runId, req.filter ?? 'all') }),
   )
   handle(IPC_CHANNELS.COMPARE_CANCEL, compareCancelRequestSchema, (req) => {
     cancelCompareRun(req.runId)
@@ -230,6 +237,14 @@ export function registerIpc(appVersion: string): void {
     const run = getCompareRun(req.runId)
     return ok({ ok: true as const, stats: run?.stats })
   })
+  handle(IPC_CHANNELS.COMPARE_DROP, compareDropRequestSchema, async (req) => {
+    const dropped = await dropCompareRows(req.runId, {
+      pathPrefix: req.pathPrefix,
+      folderName: req.folderName,
+    })
+    if (!dropped) return validationError('Compare run not found. Run Compare first.')
+    return ok(dropped)
+  })
 
   handle(IPC_CHANNELS.SYNC_RUN, syncRunRequestSchema, async (req) => {
     const jobResult = await loadJob(req.jobId)
@@ -238,7 +253,15 @@ export function registerIpc(appVersion: string): void {
     if (!compareRun) return validationError('Compare run not found. Run Compare first.')
 
     const syncRunId = crypto.randomUUID()
-    void executeSync(syncRunId, jobResult.value, compareRun.store, (event) => emitEvent(event))
+    void executeSync(
+      syncRunId,
+      jobResult.value,
+      compareRun.store,
+      (event) => emitEvent(event),
+      req.pathPrefix ?? '',
+    ).then(() => {
+      compareRun.stats = compareRun.store.getStats()
+    })
     return ok({ syncRunId })
   })
   handle(IPC_CHANNELS.SYNC_CANCEL, syncCancelRequestSchema, (req) => {

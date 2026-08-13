@@ -39,7 +39,7 @@ userData/
     "contentHash": "md5",
     "hashWhenSizeOrTimeDiffers": true,
     "useAdsCache": true,
-    "fastFolderCompare": true
+    "fastFolderCompare": false
   },
   "ads": {
     "syncAllStreams": true,
@@ -62,9 +62,6 @@ userData/
     "enabled": false
   },
   "behavior": {
-    "detectMovedRenamed": true,
-    "autoSyncAfterCompare": false,
-    "autoExpandCompareTree": true,
     "verifyAfterCopy": false
   },
   "parallelism": {

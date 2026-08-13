@@ -10,8 +10,8 @@ import type { JobFile, JobPair } from '@shared/schemas/job'
 import { readFileHashCache, writeFileHashCache, readFolderStats } from '../ads/cache'
 import { listStreams } from '../ads/list'
 import { canSkipSubtree } from './fastFolder'
-import { hasArchiveFlag } from '../win32/attrs'
 import { yieldToEventLoop } from '../win32/nativeLock'
+import { readDirectoryWin32, type DirEntry } from '../win32/find'
 import { classifyTwoWayPair } from './twoWay'
 import type { PairFileStates } from '../db/syncState'
 
@@ -115,23 +115,20 @@ export async function getFiles(options: GetFilesOptions): Promise<GetFilesResult
       }
     }
 
-    const leftNames = await readChildNames(leftDir)
-    const rightNames = await readChildNames(rightDir)
+    const leftEntries = await readDirectory(leftDir)
+    const rightEntries = await readDirectory(rightDir)
 
-    const leftDirs: string[] = []
-    const leftFiles: string[] = []
-    for (const [, name] of leftNames) {
-      const relPath = joinRel(relDir, name)
-      const leftAbs = path.join(leftRoot, relPath)
-      const leftStat = await lstatSafe(leftAbs)
-      if (!leftStat || leftStat.isSymbolicLink()) continue
-      if (leftStat.isDirectory()) leftDirs.push(name)
-      else leftFiles.push(name)
+    const leftDirs: DirEntry[] = []
+    const leftFiles: DirEntry[] = []
+    for (const entry of leftEntries.values()) {
+      if (entry.isSymlink) continue
+      if (entry.isDir) leftDirs.push(entry)
+      else leftFiles.push(entry)
     }
 
-    for (const name of leftDirs) {
+    for (const leftEnt of leftDirs) {
       if (options.isCancelled?.()) return
-      const relPath = joinRel(relDir, name)
+      const relPath = joinRel(relDir, leftEnt.name)
       if (isSystemSkipPath(relPath)) continue
       if (!shouldIncludePath(relPath, job.filters.include, job.filters.exclude, leftRoot)) {
         continue
@@ -139,75 +136,64 @@ export async function getFiles(options: GetFilesOptions): Promise<GetFilesResult
 
       const leftAbs = path.join(leftRoot, relPath)
       const rightAbs = path.join(rightRoot, relPath)
-      const leftStat = await lstatSafe(leftAbs)
-      if (!leftStat) continue
 
       await note(relPath)
 
-      const rightStat = rightNames.has(name.toLowerCase()) ? await lstatSafe(rightAbs) : undefined
-      const rightOk = Boolean(rightStat && !rightStat.isSymbolicLink() && rightStat.isDirectory())
+      const rightEnt = rightEntries.get(leftEnt.name.toLowerCase())
+      const rightOk = Boolean(rightEnt && rightEnt.isDir && !rightEnt.isSymlink)
 
-      const leftRec = await toRecord(relPath, leftAbs, leftStat, true, false, true, job)
-      const rightRec = rightOk
-        ? await toRecord(relPath, rightAbs, rightStat!, true, false, true, job)
-        : undefined
+      const leftRec = await toRecord(relPath, leftAbs, leftEnt, false, rightOk, job)
+      const rightRec = rightOk ? await toRecord(relPath, rightAbs, rightEnt!, false, true, job) : undefined
       await emit(relPath, leftRec, rightRec)
       if (!rightOk) continue
       await visit(relPath)
     }
 
-    for (const name of leftFiles) {
+    for (const leftEnt of leftFiles) {
       if (options.isCancelled?.()) return
-      const relPath = joinRel(relDir, name)
+      const relPath = joinRel(relDir, leftEnt.name)
       if (isSystemSkipPath(relPath)) continue
       if (!shouldIncludePath(relPath, job.filters.include, job.filters.exclude, leftRoot)) {
         continue
       }
 
+      if (job.behavior.archiveFlagScanOnly && !leftEnt.archive) continue
+
       const leftAbs = path.join(leftRoot, relPath)
       const rightAbs = path.join(rightRoot, relPath)
-      const leftStat = await lstatSafe(leftAbs)
-      if (!leftStat) continue
-
-      if (job.behavior.archiveFlagScanOnly && process.platform === 'win32') {
-        if (!(await hasArchiveFlag(leftAbs))) continue
-      }
 
       await note(relPath)
 
-      const rightStat = rightNames.has(name.toLowerCase()) ? await lstatSafe(rightAbs) : undefined
-      const rightOk = Boolean(rightStat && !rightStat.isSymbolicLink() && !rightStat.isDirectory())
+      const rightEnt = rightEntries.get(leftEnt.name.toLowerCase())
+      const rightOk = Boolean(rightEnt && !rightEnt.isDir && !rightEnt.isSymlink)
       const sizeTimeEqual =
-        rightOk && leftStat.size === rightStat!.size && leftStat.mtimeMs === rightStat!.mtimeMs
-      const wantAds = !rightOk || sizeTimeEqual
+        rightOk && leftEnt.size === rightEnt!.size && leftEnt.mtimeMs === rightEnt!.mtimeMs
+      const wantAds = Boolean(sizeTimeEqual)
       const wantHash = hashContent && sizeTimeEqual
 
-      const leftRec = await toRecord(relPath, leftAbs, leftStat, false, wantHash, wantAds, job)
+      const leftRec = await toRecord(relPath, leftAbs, leftEnt, wantHash, wantAds, job)
       const rightRec = rightOk
-        ? await toRecord(relPath, rightAbs, rightStat!, false, wantHash, wantAds, job)
+        ? await toRecord(relPath, rightAbs, rightEnt!, wantHash, wantAds, job)
         : undefined
       await emit(relPath, leftRec, rightRec)
     }
 
     if (job.variant === 'update') return
 
-    for (const [key, name] of rightNames) {
+    for (const [key, rightEnt] of rightEntries) {
       if (options.isCancelled?.()) return
-      if (leftNames.has(key)) continue
+      if (leftEntries.has(key)) continue
+      if (rightEnt.isSymlink) continue
 
-      const relPath = joinRel(relDir, name)
+      const relPath = joinRel(relDir, rightEnt.name)
       if (isSystemSkipPath(relPath)) continue
       if (!shouldIncludePath(relPath, job.filters.include, job.filters.exclude, rightRoot)) {
         continue
       }
 
-      const rightAbs = path.join(rightRoot, relPath)
-      const rightStat = await lstatSafe(rightAbs)
-      if (!rightStat || rightStat.isSymbolicLink()) continue
-
       await note(relPath)
-      const isDir = rightStat.isDirectory()
-      const rightRec = await toRecord(relPath, rightAbs, rightStat, isDir, false, true, job)
+      const rightAbs = path.join(rightRoot, relPath)
+      const rightRec = await toRecord(relPath, rightAbs, rightEnt, false, false, job)
       await emit(relPath, undefined, rightRec)
     }
   }
@@ -231,32 +217,42 @@ function joinRel(relDir: string, name: string): string {
   return relDir ? path.posix.join(relDir.replace(/\\/g, '/'), name) : name
 }
 
-async function readChildNames(dir: string): Promise<Map<string, string>> {
-  const names = new Map<string, string>()
-  try {
-    const entries = await fsp.readdir(dir)
-    for (const entry of entries) {
-      names.set(entry.toLowerCase(), entry)
-    }
-  } catch {
-    /* folder missing */
+async function readDirectory(absDir: string): Promise<Map<string, DirEntry>> {
+  if (process.platform === 'win32') {
+    return readDirectoryWin32(absDir)
   }
-  return names
-}
 
-async function lstatSafe(absPath: string): Promise<fs.Stats | undefined> {
+  const entries = new Map<string, DirEntry>()
+  let names: string[]
   try {
-    return await fsp.lstat(absPath)
+    names = await fsp.readdir(absDir)
   } catch {
-    return undefined
+    return entries
   }
+  for (const name of names) {
+    let stat
+    try {
+      stat = await fsp.lstat(path.join(absDir, name))
+    } catch {
+      continue
+    }
+    entries.set(name.toLowerCase(), {
+      name,
+      isDir: stat.isDirectory(),
+      isSymlink: stat.isSymbolicLink(),
+      size: stat.size,
+      mtimeMs: stat.mtimeMs,
+      atimeMs: stat.atimeMs,
+      archive: false,
+    })
+  }
+  return entries
 }
 
 async function toRecord(
   relPath: string,
   absPath: string,
-  stat: fs.Stats,
-  isDir: boolean,
+  meta: DirEntry,
   hashContent: boolean,
   wantAds: boolean,
   job: JobFile,
@@ -272,9 +268,9 @@ async function toRecord(
   }
 
   let primaryHash: string | undefined
-  if (!isDir && hashContent) {
+  if (!meta.isDir && hashContent) {
     try {
-      primaryHash = await resolveFileHash(absPath, stat.size, stat.mtimeMs, stat.atimeMs, job)
+      primaryHash = await resolveFileHash(absPath, meta.size, meta.mtimeMs, meta.atimeMs, job)
     } catch {
       primaryHash = undefined
     }
@@ -282,9 +278,9 @@ async function toRecord(
 
   return {
     relPath,
-    isDir,
-    dataSize: stat.size,
-    mtimeMs: stat.mtimeMs,
+    isDir: meta.isDir,
+    dataSize: meta.size,
+    mtimeMs: meta.mtimeMs,
     primaryHash,
     adsManifest,
   }

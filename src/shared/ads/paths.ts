@@ -75,6 +75,17 @@ export function sortManifest(manifest: AdsManifest): AdsManifest {
   return [...manifest].sort((a, b) => a.name.localeCompare(b.name))
 }
 
+/** Drop streams the job is not syncing (exclude list, or every name when `all`). */
+export function withoutIgnoredStreams(
+  manifest: AdsManifest,
+  ignored: readonly string[] | 'all',
+): AdsManifest {
+  if (ignored === 'all') return []
+  if (ignored.length === 0) return manifest
+  const skip = new Set(ignored)
+  return manifest.filter((entry) => !skip.has(entry.name))
+}
+
 /**
  * Compare two manifests (names + sizes). Ignores hash.
  */

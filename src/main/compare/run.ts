@@ -1,5 +1,5 @@
 import type { BrowserWindow } from 'electron'
-import type { CompareFilter, CompareRun, CompareRow } from '@shared/schemas/compare'
+import type { CompareFilter, CompareRun, CompareRow, CompareStats, FolderTreeNode } from '@shared/schemas/compare'
 import type { JobFile } from '@shared/schemas/job'
 import { loadJob } from '../jobs/store'
 import { openDb, loadStatesForPair } from '../db/syncState'
@@ -11,6 +11,7 @@ import {
 } from '../compare/rowStore'
 import { applyMoveDetection } from '../compare/moveDetect'
 import { preflightPairUncPaths } from '../remote/preflight'
+import { pathMatchesFolderName, pathMatchesPrefix } from '@shared/compare/folderTree'
 
 export type CompareEvent =
   | { type: 'compare:progress'; runId: string; done: number; total: number; currentPath?: string }
@@ -160,10 +161,10 @@ export async function runCompare(
       pairIndex++
     }
 
-    if (!cancelFlags.get(runId) && job.behavior.detectMovedRenamed) {
+    if (!cancelFlags.get(runId)) {
       progress.message('Detecting moved files…')
       await store.close()
-      await applyMoveDetection(store, job)
+      await applyMoveDetection(store)
     }
   } finally {
     progress.stop()
@@ -201,14 +202,46 @@ export async function getCompareRows(
   offset: number,
   limit: number,
   filter: CompareFilter = 'all',
+  pathPrefix = '',
 ): Promise<{ rows: CompareRow[]; total: number }> {
   const run = compareRuns.get(runId)
   if (!run) return { rows: [], total: 0 }
-  const page = await run.store.getPage(offset, limit, filter)
+  const page = await run.store.getPage(offset, limit, filter, pathPrefix)
   return {
     rows: page.rows.map((row) => hydrateRowPaths(row, run.job)),
     total: page.total,
   }
+}
+
+export async function getCompareFolderTree(
+  runId: string,
+  filter: CompareFilter = 'all',
+): Promise<FolderTreeNode> {
+  const run = compareRuns.get(runId)
+  if (!run) {
+    return { path: '', name: '', count: 0, creates: 0, updates: 0, deletes: 0, moves: 0, children: [] }
+  }
+  return run.store.getFolderTree(filter)
+}
+
+export async function dropCompareRows(
+  runId: string,
+  opts: { pathPrefix?: string; folderName?: string },
+): Promise<{ dropped: number; stats: CompareStats } | undefined> {
+  const run = compareRuns.get(runId)
+  if (!run) return undefined
+  const dropped = await run.store.dropMatching((row) => {
+    if (opts.folderName) {
+      return (
+        pathMatchesFolderName(row.relPath, opts.folderName) ||
+        pathMatchesFolderName(row.fromRelPath ?? '', opts.folderName)
+      )
+    }
+    const prefix = opts.pathPrefix ?? ''
+    return pathMatchesPrefix(row.relPath, prefix) || pathMatchesPrefix(row.fromRelPath ?? '', prefix)
+  })
+  run.stats = run.store.getStats()
+  return { dropped, stats: run.stats }
 }
 
 export function broadcastCompareEvent(window: BrowserWindow | null, event: CompareEvent): void {

@@ -84,6 +84,17 @@ export type CompareFilter =
   | 'adsDiff'
   | 'errors'
 
+export type FolderTreeNode = {
+  path: string
+  name: string
+  count: number
+  creates: number
+  updates: number
+  deletes: number
+  moves: number
+  children: FolderTreeNode[]
+}
+
 export type PlannedAction = {
   rowId: string
   pairId: string
@@ -110,6 +121,7 @@ export type SyncSummary = {
   succeeded: number
   failed: number
   cancelled: boolean
+  stats?: CompareStats
 }
 
 export type CompareRun = {

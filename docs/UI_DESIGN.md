@@ -12,11 +12,12 @@ The workbench uses a **header toolbar** (job picker, paths, Compare / Sync / Can
 ├─────────────────────────────────────────────────────────────┤
 │ Job ▾  Name  [+ New] [Save]   Source …   Target …           │
 │ [Compare] [Sync] [Cancel]     Options | Compare | Filters | Log │
-├─────────────────────────────────────────────────────────────┤
-│ ☑  Path              Left            Right         Action ADS │
-│    src/foo.txt       1.2 MB  …       …             →      =   │
-│    src/bar/          …               …             ⊕      +1  │
-├─────────────────────────────────────────────────────────────┤
+├──────────────┬──────────────────────────────────────────────┤
+│ Folders      │ ☑  Source            Action      Target      │
+│ ▾ Photos     │    a.jpg             Update      a.jpg       │
+│   ▾ 2024     │    b.jpg             Create      —           │
+│     trip     │                                              │
+├──────────────┴──────────────────────────────────────────────┤
 │ Comparing… 12,450 items · path                      1:05    │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -32,18 +33,19 @@ The workbench uses a **header toolbar** (job picker, paths, Compare / Sync / Can
 
 Compare method, ADS cache, Recycle Bin, workers, watch, variant. Filters have their own tab (pattern vs this path).
 
-### Compare grid (center)
+### Compare results
 
-Virtualized table (`@tanstack/react-virtual` or equivalent).
+Filter bar (All | Differences | Source only | Target only | Deleted | Moved | ADS ≠) sits above a **split**:
 
-| Column | Content |
-|--------|---------|
-| ☑ | Include in sync |
-| Relative path | Relative to pair root |
-| Left | Size, date |
-| Right | Size, date |
-| Action | Icon + label (Create, Update, Delete, …) |
-| ADS | Badge: `=` equal, `≠` diff, `+n/-m` stream delta |
+- **Folder tree (left)** — built from the change list after Compare (not a second disk walk). Folder names use normal text; the count is items in that branch. After every Compare, **only the root is expanded** (nested folders stay collapsed until you open a twistie). Click a folder to show only that branch in the grid. Right-click a folder:
+
+  - **Exclude this folder permanently** — add a path filter (`/name` or `parent/name`) and remove it from this compare.
+  - **Exclude folders named “X” permanently** — add a name filter (any depth) and remove matching items from this compare.
+  - **Exclude this folder from this compare** — hide it for this run only (next Compare brings it back).
+  - **Sync this folder now** — run only that branch, then drop succeeded items from the tree.
+- **Change list (right)** — two-pane Source / Action / Target grid.
+
+The tree only contains folders that have diffs (equals are counted, not stored). A collapsed missing-side folder is one node. Moves appear under both the old and new folders.
 
 **Row colors** (CSS variables, dark-mode safe):
 
@@ -56,8 +58,7 @@ Virtualized table (`@tanstack/react-virtual` or equivalent).
 | Conflict / ambiguous | Yellow |
 | Excluded | Strikethrough + gray |
 | Error from last run | Orange border |
-
-**Toolbar filters** (toggle buttons): All | Differences | Left only | Right only | ADS diff | Errors
+| Move / rename | Purple |
 
 ### Detail pane (bottom, optional)
 
@@ -112,7 +113,7 @@ Default **system** theme; persist in `settings.json`.
 
 ## Non-goals (UI)
 
-- Side-by-side dual tree browsable panes (FFS has folder pickers — we use path fields + OS browse dialog).
+- Dual **browse** trees for picking source/target folders (FFS folder pickers — we use path fields + OS browse dialog). The **results** folder tree on the left of the change list is in scope.
 - Ribbon UI.
 
 ## Related

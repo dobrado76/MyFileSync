@@ -43,7 +43,9 @@ Prefix: `sync:` for engine, `job:` for jobs, `app:` for shell.
 | Channel | Request | Response |
 |---------|---------|----------|
 | `compare:run` | `{ jobId, pairIds? }` | `{ runId, rowCount, stats }` |
-| `compare:getRows` | `{ runId, offset, limit, filter? }` | `{ rows: CompareRow[], total }` |
+| `compare:getRows` | `{ runId, offset, limit, filter?, pathPrefix? }` | `{ rows: CompareRow[], total }` |
+| `compare:getTree` | `{ runId, filter? }` | `{ root: FolderTreeNode }` |
+| `compare:drop` | `{ runId, pathPrefix?, folderName? }` | `{ dropped, stats }` |
 | `compare:cancel` | `{ runId }` | `{ ok }` |
 | `compare:setRowIncluded` | `{ runId, rowId, included }` | `{ ok }` |
 
@@ -51,7 +53,7 @@ Prefix: `sync:` for engine, `job:` for jobs, `app:` for shell.
 
 | Channel | Request | Response |
 |---------|---------|----------|
-| `sync:run` | `{ jobId, runId?, rowIds? }` | `{ syncRunId }` |
+| `sync:run` | `{ jobId, runId, pathPrefix? }` | `{ syncRunId }` |
 | `sync:cancel` | `{ syncRunId }` | `{ ok }` |
 | `sync:getProgress` | `{ syncRunId }` | `SyncProgress` |
 

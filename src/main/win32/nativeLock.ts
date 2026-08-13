@@ -36,7 +36,6 @@ export async function withNativeLock<T>(fn: () => T | Promise<T>): Promise<T> {
   try {
     return await fn()
   } finally {
-    await yieldToEventLoop()
     release()
   }
 }

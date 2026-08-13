@@ -10,13 +10,13 @@ MyFileSync jobs are JSON. The workbench does **not** import INI. This page is a 
 
 | INI key | Example | JSON mapping |
 |---------|---------|--------------|
-| `MinimizeRefresh` | `True` | `behavior.minimizeRefresh` (UI throttle — default true) |
-| `DetectMoved` | `True` | `behavior.detectMovedRenamed` |
-| `AutoExpand` | `True` | `behavior.autoExpandCompareTree` |
-| `UseVolumeShadowCopy` | `True` | `vss.enabled` |
-| `AutoBackup` | `False` | `behavior.autoSyncAfterCompare` |
-| `FastCompare` | `True` | `compare.fastFolderCompare` |
-| `UseArchiveFlag` | `False` | `behavior.archiveFlagScanOnly` |
+| `MinimizeRefresh` | `True` | Ignored (JSONL compare list does not need a UI throttle) |
+| `DetectMoved` | `True` | Always on — not a job setting |
+| `AutoExpand` | `True` | Ignored — the results tree always starts with only the root expanded |
+| `UseVolumeShadowCopy` | `True` | `vss.enabled` (stub; not in the UI) |
+| `AutoBackup` | `False` | Ignored — Compare never auto-syncs |
+| `FastCompare` | `True` | `compare.fastFolderCompare` (no UI; only applies with ADS folder-stat cache) |
+| `UseArchiveFlag` | `False` | `behavior.archiveFlagScanOnly` (no UI) |
 | `PosX`, `PosY`, `Width`, `Height` | integers | `window-state.json` (not in job JSON) |
 | `LastFolder` | path | `settings.lastBrowsePath` |
 
@@ -68,7 +68,7 @@ Importer sets sensible defaults for fields BackupMirror had implicitly:
 
 | BackupMirror | MyFileSync |
 |--------------|------------|
-| WinForms action tree | Side-by-side grid + detail dialog |
+| WinForms action tree | Folder tree + two-pane change list + detail panel |
 | `GetFiles` / `GetFilesFast` | `compare/getFiles.ts` + fast folder ADS |
 | `CloneFile` / `CloneDirectory` | `sync/copy.ts` + `ads/copyStreams.ts` |
 | MD5 in ADS stream | `ads.writeCacheToAds` + stream name `MD5` |

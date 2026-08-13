@@ -1,11 +1,15 @@
 import type { BrowserWindow } from 'electron'
 import { ok } from '@shared/result'
+import { adsIgnoredStreamNames } from '@shared/compare/classify'
 import type { JobFile } from '@shared/schemas/job'
 import type { PlannedAction, SyncProgress, SyncSummary } from '@shared/schemas/compare'
 import { rowToPlannedAction } from '../compare/plan'
 import type { CompareRowStore } from '../compare/rowStore'
 import { copyEntry, copyStreamsOnly, createEntry, deleteEntry, moveEntry, type CopyOptions } from './copy'
+import { requestCopyAbort, clearCopyAbort, isCopyAborted } from '../win32/copy'
+import { yieldToEventLoop } from '../win32/nativeLock'
 import { resolvePairRoot, versionBeforeMutation } from './versioning'
+import { pathMatchesPrefix } from '@shared/compare/folderTree'
 
 export type SyncRunState = {
   syncRunId: string
@@ -22,14 +26,55 @@ export type SyncEvent =
   | { type: 'sync:done'; syncRunId: string; summary: SyncSummary }
 
 const activeRuns = new Map<string, SyncRunState>()
+const PROGRESS_INTERVAL_MS = 100
+let cancelAllPending = false
 
 export function getSyncRun(syncRunId: string): SyncRunState | undefined {
   return activeRuns.get(syncRunId)
 }
 
-export function cancelSyncRun(syncRunId: string): void {
-  const run = activeRuns.get(syncRunId)
-  if (run) run.cancelled = true
+export function cancelSyncRun(syncRunId?: string): void {
+  requestCopyAbort()
+  if (syncRunId) {
+    const run = activeRuns.get(syncRunId)
+    if (run) run.cancelled = true
+    else cancelAllPending = true
+    return
+  }
+  cancelAllPending = true
+  for (const run of activeRuns.values()) {
+    run.cancelled = true
+  }
+}
+
+function createSyncProgress(syncRunId: string, state: SyncRunState, emit: SyncEventEmitter) {
+  let lastEmitAt = 0
+  let timer: ReturnType<typeof setTimeout> | null = null
+
+  function flush(): void {
+    if (timer) {
+      clearTimeout(timer)
+      timer = null
+    }
+    lastEmitAt = Date.now()
+    emit({ type: 'sync:progress', syncRunId, progress: { ...state.progress } })
+  }
+
+  return {
+    note(relPath: string, phase: SyncProgress['phase']): void {
+      state.progress.currentPath = relPath
+      state.progress.phase = phase
+      const now = Date.now()
+      if (now - lastEmitAt >= PROGRESS_INTERVAL_MS) {
+        flush()
+        return
+      }
+      if (!timer) {
+        timer = setTimeout(flush, PROGRESS_INTERVAL_MS - (now - lastEmitAt))
+      }
+    },
+    flush,
+  }
 }
 
 export async function executeSync(
@@ -37,12 +82,14 @@ export async function executeSync(
   job: JobFile,
   store: CompareRowStore,
   emit: SyncEventEmitter,
+  pathPrefix = '',
 ): Promise<SyncSummary> {
   const total = store.getStats().toSync
+  const ignored = adsIgnoredStreamNames(job)
   const state: SyncRunState = {
     syncRunId,
     jobId: job.id,
-    cancelled: false,
+    cancelled: cancelAllPending,
     progress: {
       phase: 'preparing',
       done: 0,
@@ -50,67 +97,108 @@ export async function executeSync(
       errors: 0,
     },
   }
+  cancelAllPending = false
   activeRuns.set(syncRunId, state)
+  if (!state.cancelled) clearCopyAbort()
 
   let succeeded = 0
   let failed = 0
+  const progress = createSyncProgress(syncRunId, state, emit)
 
   const copyOptions = (): CopyOptions => ({
-    excludeStreams: job.ads.excludeStreams,
+    excludeStreams: ignored === 'all' ? [] : [...ignored],
+    deleteExtraStreams: job.variant === 'mirror',
     verifyAfterCopy: job.behavior.verifyAfterCopy,
     hashAlgorithm: job.compare.contentHash === 'sha256' ? 'sha256' : 'md5',
     vssEnabled: job.vss.enabled,
     filters: job.filters,
-    onProgress: (current) => {
-      state.progress.currentPath = current
-      emit({ type: 'sync:progress', syncRunId, progress: { ...state.progress } })
-    },
+    onProgress: (current) => progress.note(current, 'copying'),
+    isCancelled: () => state.cancelled || isCopyAborted(),
   })
 
-  for (const phase of [
-    (action: string) => action === 'Move' || action === 'Rename',
-    (action: string) =>
-      action === 'Create' || action === 'Update' || action === 'UpdateStreamsOnly',
-    (action: string) => action === 'Delete',
-  ] as const) {
-    for await (const row of store.iterateIncluded()) {
-      if (state.cancelled) break
-      if (!phase(row.action)) continue
+  const moves: PlannedAction[] = []
+  const copies: PlannedAction[] = []
+  const deletes: PlannedAction[] = []
 
-      const action = rowToPlannedAction(row, job, job.pairs)
-      if (!action) continue
-
-      const pair = job.pairs.find((p) => p.id === action.pairId)
-      const options = copyOptions()
-      if (pair) {
-        options.filterRoot =
-          action.direction === 'rightToLeft' ? pair.right : pair.left
-      }
-
-      state.progress.currentPath = action.relPath
-      state.progress.phase =
-        action.action === 'Delete' ? 'deleting' : action.action === 'Move' || action.action === 'Rename' ? 'copying' : 'copying'
-      emit({ type: 'sync:progress', syncRunId, progress: { ...state.progress } })
-
-      const result = await runAction(action, job, options)
-      state.progress.done++
-      if (result.ok) {
-        succeeded++
-        emit({ type: 'sync:itemDone', syncRunId, rowId: action.rowId, ok: true })
-      } else {
-        failed++
-        state.progress.errors++
-        emit({
-          type: 'sync:itemDone',
-          syncRunId,
-          rowId: action.rowId,
-          ok: false,
-          error: result.error.message,
-        })
-      }
-      emit({ type: 'sync:progress', syncRunId, progress: { ...state.progress } })
+  let planned = 0
+  const succeededIds = new Set<string>()
+  for await (const row of store.iterateIncluded()) {
+    if (state.cancelled || isCopyAborted()) {
+      state.cancelled = true
+      break
     }
+    if (
+      pathPrefix &&
+      !pathMatchesPrefix(row.relPath, pathPrefix) &&
+      !pathMatchesPrefix(row.fromRelPath ?? '', pathPrefix)
+    ) {
+      continue
+    }
+    const action = rowToPlannedAction(row, job, job.pairs)
+    if (!action) continue
+    if (action.action === 'Move' || action.action === 'Rename') moves.push(action)
+    else if (action.action === 'Delete') deletes.push(action)
+    else copies.push(action)
+    planned++
+    if (planned % 20 === 0) await yieldToEventLoop()
+  }
+
+  state.progress.total = moves.length + copies.length + deletes.length
+
+  async function runOne(action: PlannedAction, phase: SyncProgress['phase']): Promise<void> {
+    await yieldToEventLoop()
+    if (state.cancelled || isCopyAborted()) {
+      state.cancelled = true
+      return
+    }
+
+    const pair = job.pairs.find((p) => p.id === action.pairId)
+    const options = copyOptions()
+    if (pair) {
+      options.filterRoot = action.direction === 'rightToLeft' ? pair.right : pair.left
+    }
+
+    progress.note(action.relPath, phase)
+
+    const result = await runAction(action, job, options)
+    if (state.cancelled || isCopyAborted() || (!result.ok && result.error.code === 'cancelled')) {
+      state.cancelled = true
+      return
+    }
+    state.progress.done++
+    if (result.ok) {
+      succeeded++
+      succeededIds.add(action.rowId)
+    } else {
+      failed++
+      state.progress.errors++
+      emit({
+        type: 'sync:itemDone',
+        syncRunId,
+        rowId: action.rowId,
+        ok: false,
+        error: result.error.message,
+      })
+    }
+  }
+
+  for (const action of moves) {
     if (state.cancelled) break
+    await runOne(action, 'copying')
+  }
+  for (const action of copies) {
+    if (state.cancelled) break
+    await runOne(action, 'copying')
+  }
+  for (const action of deletes) {
+    if (state.cancelled) break
+    await runOne(action, 'deleting')
+  }
+
+  progress.flush()
+
+  if (!state.cancelled && succeededIds.size > 0) {
+    await store.applyReplacements(succeededIds, new Map())
   }
 
   state.progress.phase = state.cancelled ? 'cancelled' : 'done'
@@ -120,6 +208,7 @@ export async function executeSync(
     succeeded,
     failed,
     cancelled: state.cancelled,
+    stats: store.getStats(),
   }
   emit({ type: 'sync:done', syncRunId, summary })
   activeRuns.delete(syncRunId)
@@ -144,6 +233,7 @@ async function runAction(action: PlannedAction, job: JobFile, copyOptions: CopyO
       return copyEntry(action, copyOptions)
     }
     case 'UpdateStreamsOnly': {
+      if (!job.ads.syncAllStreams) return ok(undefined)
       if (action.destPath) {
         const pairRoot = resolvePairRoot(action.pairId, action.destPath, job)
         if (pairRoot) {
@@ -151,7 +241,7 @@ async function runAction(action: PlannedAction, job: JobFile, copyOptions: CopyO
           if (!versioned.ok) return versioned
         }
       }
-      return copyStreamsOnly(action)
+      return copyStreamsOnly(action, copyOptions)
     }
     case 'Delete': {
       if (!action.destPath) return copyEntry(action, copyOptions)

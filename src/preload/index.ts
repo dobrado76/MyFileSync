@@ -4,7 +4,6 @@ import type { MyFileSyncApi, SyncEvent } from '@shared/ipc/api'
 import type { Result } from '@shared/result'
 import type { JobFile } from '@shared/schemas/job'
 import type { Settings } from '@shared/schemas/settings'
-import type { CompareFilter } from '@shared/schemas/compare'
 
 async function invoke<T>(channel: string, payload?: unknown): Promise<Result<T>> {
   return ipcRenderer.invoke(channel, payload) as Promise<Result<T>>
@@ -31,16 +30,13 @@ const api: MyFileSyncApi = {
   jobImportJson: (req) => invoke(IPC_CHANNELS.JOB_IMPORT_JSON, req),
   jobImportIni: (req) => invoke(IPC_CHANNELS.JOB_IMPORT_INI, req),
   compareRun: (req) => invoke(IPC_CHANNELS.COMPARE_RUN, req),
-  compareGetRows: (req: {
-    runId: string
-    offset: number
-    limit: number
-    filter?: CompareFilter
-  }) => invoke(IPC_CHANNELS.COMPARE_GET_ROWS, req),
+  compareGetRows: (req) => invoke(IPC_CHANNELS.COMPARE_GET_ROWS, req),
+  compareGetTree: (req) => invoke(IPC_CHANNELS.COMPARE_GET_TREE, req),
   compareCancel: (req) => invoke(IPC_CHANNELS.COMPARE_CANCEL, req ?? {}),
   compareSetRowIncluded: (req) => invoke(IPC_CHANNELS.COMPARE_SET_ROW_INCLUDED, req),
+  compareDrop: (req) => invoke(IPC_CHANNELS.COMPARE_DROP, req),
   syncRun: (req) => invoke(IPC_CHANNELS.SYNC_RUN, req),
-  syncCancel: (req) => invoke(IPC_CHANNELS.SYNC_CANCEL, req),
+  syncCancel: (req) => invoke(IPC_CHANNELS.SYNC_CANCEL, req ?? {}),
   syncGetProgress: (req) => invoke(IPC_CHANNELS.SYNC_GET_PROGRESS, req),
   onSyncEvent: (listener: (event: SyncEvent) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, data: SyncEvent) => listener(data)

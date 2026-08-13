@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   classifyFilter,
+  excludeFolderNameRule,
+  excludeThisFolderRule,
   relativeFilterFromAbs,
   shouldIncludePath,
 } from '@shared/compare/filters'
@@ -54,5 +56,15 @@ describe('filters', () => {
   it('ignores comments', () => {
     expect(shouldIncludePath('foo.tmp', [], ['# ignore me', '*.tmp'])).toBe(false)
     expect(shouldIncludePath('foo.txt', [], ['# *.txt'])).toBe(true)
+  })
+
+  it('builds this-folder and any-name exclude rules from a tree path', () => {
+    expect(excludeThisFolderRule('')).toBeNull()
+    expect(excludeThisFolderRule('ComfyUI')).toBe('/ComfyUI')
+    expect(excludeThisFolderRule('ComfyUI/models')).toBe('ComfyUI/models')
+    expect(excludeFolderNameRule('ComfyUI/models')).toBe('models')
+    expect(shouldIncludePath('ComfyUI/a.py', [], ['/ComfyUI'])).toBe(false)
+    expect(shouldIncludePath('other/ComfyUI/a.py', [], ['/ComfyUI'])).toBe(true)
+    expect(shouldIncludePath('other/models/x.bin', [], ['models'])).toBe(false)
   })
 })

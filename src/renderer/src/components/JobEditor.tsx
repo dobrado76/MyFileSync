@@ -121,32 +121,12 @@ export function JobEditor({ job, open, onClose, onSave, onChange, onBrowse }: Jo
               <label className="check-row">
                 <input
                   type="checkbox"
-                  checked={job.compare.fastFolderCompare}
-                  onChange={(e) =>
-                    onChange({ compare: { ...job.compare, fastFolderCompare: e.target.checked } })
-                  }
-                />
-                Fast folder compare (ADS aggregates)
-              </label>
-              <label className="check-row">
-                <input
-                  type="checkbox"
                   checked={job.behavior.verifyAfterCopy}
                   onChange={(e) =>
                     onChange({ behavior: { ...job.behavior, verifyAfterCopy: e.target.checked } })
                   }
                 />
                 Verify after copy
-              </label>
-              <label className="check-row">
-                <input
-                  type="checkbox"
-                  checked={job.behavior.detectMovedRenamed}
-                  onChange={(e) =>
-                    onChange({ behavior: { ...job.behavior, detectMovedRenamed: e.target.checked } })
-                  }
-                />
-                Detect moves/renames
               </label>
             </>
           )}
@@ -192,14 +172,6 @@ export function JobEditor({ job, open, onClose, onSave, onChange, onBrowse }: Jo
 
           {tab === 'advanced' && (
             <>
-              <label className="check-row">
-                <input
-                  type="checkbox"
-                  checked={job.vss.enabled}
-                  onChange={(e) => onChange({ vss: { enabled: e.target.checked } })}
-                />
-                VSS for locked files
-              </label>
               <label className="check-row">
                 <input
                   type="checkbox"

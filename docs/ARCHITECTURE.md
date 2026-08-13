@@ -51,7 +51,7 @@ src/main/
     vss.ts              # Optional snapshot path
     hardlink.ts         # Multi-root hard links
   ads/
-    list.ts             # FindFirstStreamW enumeration
+    list.ts             # FileStreamInfo enumeration (attributes-only; no $DATA read)
     copyStreams.ts      # Alternate-only replication
   db/
     syncState.ts        # Per-job change DB

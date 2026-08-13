@@ -29,7 +29,9 @@ export function StatusBar({ text, showElapsed = false }: StatusBarProps) {
 
   return (
     <footer className="status-bar" role="status" aria-live="polite">
-      <span className="status-bar-text">{text}</span>
+      <span className="status-bar-text" title={text}>
+        {text}
+      </span>
       {showElapsed && startedAt ? (
         <span className="status-bar-elapsed">{formatElapsed(now - startedAt)}</span>
       ) : null}
