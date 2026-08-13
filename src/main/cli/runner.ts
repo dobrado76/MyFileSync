@@ -110,7 +110,7 @@ export async function runJobHeadless(
   const syncRunId = crypto.randomUUID()
   log(options, `[${job.name}] Sync started`)
 
-  const summary = await executeSync(syncRunId, job, compareRun.rows, (event) => {
+  const summary = await executeSync(syncRunId, job, compareRun.store, (event) => {
     if (event.type === 'sync:itemDone' && !event.ok) {
       log(options, `[${job.name}] Error: ${event.error ?? 'unknown'}`)
     }

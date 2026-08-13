@@ -33,8 +33,10 @@ flowchart TD
 ### Walk (`src/main/compare/getFiles.ts`)
 
 - Input: pair roots, filters (include/exclude globs).
-- Output: **diff** `CompareRow`s plus an equal count (equals are not stored).
-- Per folder: source directories, source files, then target-only names. Do not recurse into target-only trees.
+- Output: **diff** rows streamed to a JSONL store (never a giant in-memory array). Equals are counted only.
+- A folder missing on the other side is **one** Create or Delete. Children are not listed; sync copies or removes the tree (filters applied during copy).
+- File-level diffs are one row each. The grid pages from disk.
+- Per folder: source directories, source files, then target-only names.
 - Skip: `$…` segments and `RECYCLER` (BackupMirror `\$` / `RECYCLER`).
 - Symlinks: not followed. Junctions are followed (with a cycle guard).
 

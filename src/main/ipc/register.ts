@@ -217,8 +217,8 @@ export function registerIpc(appVersion: string): void {
       return validationError(error instanceof Error ? error.message : String(error))
     }
   })
-  handle(IPC_CHANNELS.COMPARE_GET_ROWS, compareGetRowsRequestSchema, (req) =>
-    ok(getCompareRows(req.runId, req.offset, req.limit, req.filter ?? 'all')),
+  handle(IPC_CHANNELS.COMPARE_GET_ROWS, compareGetRowsRequestSchema, async (req) =>
+    ok(await getCompareRows(req.runId, req.offset, req.limit, req.filter ?? 'all')),
   )
   handle(IPC_CHANNELS.COMPARE_CANCEL, compareCancelRequestSchema, (req) => {
     cancelCompareRun(req.runId)
@@ -238,7 +238,7 @@ export function registerIpc(appVersion: string): void {
     if (!compareRun) return validationError('Compare run not found. Run Compare first.')
 
     const syncRunId = crypto.randomUUID()
-    void executeSync(syncRunId, jobResult.value, compareRun.rows, (event) => emitEvent(event))
+    void executeSync(syncRunId, jobResult.value, compareRun.store, (event) => emitEvent(event))
     return ok({ syncRunId })
   })
   handle(IPC_CHANNELS.SYNC_CANCEL, syncCancelRequestSchema, (req) => {

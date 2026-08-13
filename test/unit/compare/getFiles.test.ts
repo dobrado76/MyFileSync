@@ -3,6 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createDefaultJob } from '@shared/schemas/job'
+import type { CompareRow } from '@shared/schemas/compare'
 import { getFiles } from '../../../src/main/compare/getFiles'
 
 const temps: string[] = []
@@ -15,6 +16,18 @@ async function makePair(): Promise<{ left: string; right: string }> {
   await fs.mkdir(left)
   await fs.mkdir(right)
   return { left, right }
+}
+
+async function collect(job: ReturnType<typeof createDefaultJob>) {
+  const rows: CompareRow[] = []
+  const result = await getFiles({
+    pair: job.pairs[0]!,
+    job,
+    onDiff: (row) => {
+      rows.push(row)
+    },
+  })
+  return { ...result, rows }
 }
 
 afterEach(async () => {
@@ -40,20 +53,23 @@ describe('getFiles', () => {
     job.pairs[0]!.right = right
     job.filters.exclude = []
 
-    const result = await getFiles({ pair: job.pairs[0]!, job })
+    const result = await collect(job)
     const rels = result.rows.map((r) => r.relPath).sort()
 
     expect(result.equalCount).toBe(1)
+    expect(result.diffCount).toBe(3)
     expect(rels).toEqual(['changed.txt', 'only-left.txt', 'only-right.txt'])
     expect(result.rows.find((r) => r.relPath === 'only-left.txt')?.action).toBe('Create')
     expect(result.rows.find((r) => r.relPath === 'only-right.txt')?.action).toBe('Delete')
     expect(result.rows.find((r) => r.relPath === 'changed.txt')?.action).toBe('Update')
   })
 
-  it('recurses into source-only folders but not target-only trees', async () => {
+  it('collapses source-only and target-only folder trees to one row', async () => {
     const { left, right } = await makePair()
     await fs.mkdir(path.join(left, 'src-only'))
     await fs.writeFile(path.join(left, 'src-only', 'child.txt'), 'x')
+    await fs.mkdir(path.join(left, 'src-only', 'nested'))
+    await fs.writeFile(path.join(left, 'src-only', 'nested', 'deep.txt'), 'z')
     await fs.mkdir(path.join(right, 'trg-only'))
     await fs.writeFile(path.join(right, 'trg-only', 'orphan.txt'), 'y')
 
@@ -62,13 +78,13 @@ describe('getFiles', () => {
     job.pairs[0]!.right = right
     job.filters.exclude = []
 
-    const result = await getFiles({ pair: job.pairs[0]!, job })
+    const result = await collect(job)
     const rels = result.rows.map((r) => r.relPath).sort()
 
-    expect(rels).toContain('src-only')
-    expect(rels).toContain('src-only/child.txt')
-    expect(rels).toContain('trg-only')
-    expect(rels).not.toContain('trg-only/orphan.txt')
+    expect(rels).toEqual(['src-only', 'trg-only'])
+    expect(result.rows.find((r) => r.relPath === 'src-only')?.action).toBe('Create')
+    expect(result.rows.find((r) => r.relPath === 'src-only')?.left?.isDir).toBe(true)
+    expect(result.rows.find((r) => r.relPath === 'trg-only')?.action).toBe('Delete')
   })
 
   it('skips target-only names in Update jobs', async () => {
@@ -86,7 +102,7 @@ describe('getFiles', () => {
     job.pairs[0]!.right = right
     job.filters.exclude = []
 
-    const result = await getFiles({ pair: job.pairs[0]!, job })
+    const result = await collect(job)
     expect(result.rows.map((r) => r.relPath)).toEqual([])
     expect(result.equalCount).toBe(1)
   })

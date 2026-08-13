@@ -1,9 +1,10 @@
 import type { BrowserWindow } from 'electron'
 import { ok } from '@shared/result'
 import type { JobFile } from '@shared/schemas/job'
-import type { CompareRow, PlannedAction, SyncProgress, SyncSummary } from '@shared/schemas/compare'
-import { buildPlannedActions } from '../compare/plan'
-import { copyEntry, copyStreamsOnly, createEntry, deleteEntry } from './copy'
+import type { PlannedAction, SyncProgress, SyncSummary } from '@shared/schemas/compare'
+import { rowToPlannedAction } from '../compare/plan'
+import type { CompareRowStore } from '../compare/rowStore'
+import { copyEntry, copyStreamsOnly, createEntry, deleteEntry, type CopyOptions } from './copy'
 import { resolvePairRoot, versionBeforeMutation } from './versioning'
 
 export type SyncRunState = {
@@ -34,10 +35,10 @@ export function cancelSyncRun(syncRunId: string): void {
 export async function executeSync(
   syncRunId: string,
   job: JobFile,
-  rows: CompareRow[],
+  store: CompareRowStore,
   emit: SyncEventEmitter,
 ): Promise<SyncSummary> {
-  const actions = buildPlannedActions(rows, job, job.pairs)
+  const total = store.getStats().toSync
   const state: SyncRunState = {
     syncRunId,
     jobId: job.id,
@@ -45,7 +46,7 @@ export async function executeSync(
     progress: {
       phase: 'preparing',
       done: 0,
-      total: actions.length,
+      total,
       errors: 0,
     },
   }
@@ -54,18 +55,36 @@ export async function executeSync(
   let succeeded = 0
   let failed = 0
 
-  const deleteActions = actions.filter((a) => a.action === 'Delete').reverse()
-  const nonDeleteActions = actions.filter((a) => a.action !== 'Delete')
-  const ordered = [...nonDeleteActions, ...deleteActions]
+  const copyOptions = (): CopyOptions => ({
+    excludeStreams: job.ads.excludeStreams,
+    verifyAfterCopy: job.behavior.verifyAfterCopy,
+    hashAlgorithm: job.compare.contentHash === 'sha256' ? 'sha256' : 'md5',
+    vssEnabled: job.vss.enabled,
+    filters: job.filters,
+    onProgress: (current) => {
+      state.progress.currentPath = current
+      emit({ type: 'sync:progress', syncRunId, progress: { ...state.progress } })
+    },
+  })
 
-  for (const action of ordered) {
+  for await (const row of store.iterateIncluded()) {
     if (state.cancelled) break
+
+    const action = rowToPlannedAction(row, job, job.pairs)
+    if (!action) continue
+
+    const pair = job.pairs.find((p) => p.id === action.pairId)
+    const options = copyOptions()
+    if (pair) {
+      options.filterRoot =
+        action.direction === 'rightToLeft' ? pair.right : pair.left
+    }
 
     state.progress.currentPath = action.relPath
     state.progress.phase = action.action === 'Delete' ? 'deleting' : 'copying'
     emit({ type: 'sync:progress', syncRunId, progress: { ...state.progress } })
 
-    const result = await runAction(action, job)
+    const result = await runAction(action, job, options)
     state.progress.done++
     if (result.ok) {
       succeeded++
@@ -97,14 +116,7 @@ export async function executeSync(
   return summary
 }
 
-async function runAction(action: PlannedAction, job: JobFile) {
-  const copyOptions = {
-    excludeStreams: job.ads.excludeStreams,
-    verifyAfterCopy: job.behavior.verifyAfterCopy,
-    hashAlgorithm: job.compare.contentHash === 'sha256' ? ('sha256' as const) : ('md5' as const),
-    vssEnabled: job.vss.enabled,
-  }
-
+async function runAction(action: PlannedAction, job: JobFile, copyOptions: CopyOptions) {
   switch (action.action) {
     case 'Create':
       return createEntry(action, copyOptions)

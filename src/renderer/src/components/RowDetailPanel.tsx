@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import type { AdsManifest } from '@shared/ads/paths'
 import type { CompareRow } from '@shared/schemas/compare'
 
 type RowDetailProps = {
@@ -9,18 +10,37 @@ type RowDetailProps = {
 export function RowDetailPanel({ row, onClose }: RowDetailProps) {
   const [preview, setPreview] = useState<string>('')
   const [previewStream, setPreviewStream] = useState<string>('')
+  const [leftManifest, setLeftManifest] = useState<AdsManifest>([])
+  const [rightManifest, setRightManifest] = useState<AdsManifest>([])
 
   useEffect(() => {
     setPreview('')
     setPreviewStream('')
-  }, [row?.id])
+    setLeftManifest([])
+    setRightManifest([])
+    if (!row) return
+
+    let cancelled = false
+    void (async () => {
+      if (row.leftPath) {
+        const listed = await window.myFileSync.adsList({ path: row.leftPath })
+        if (!cancelled && listed.ok) setLeftManifest(listed.value.manifest)
+      }
+      if (row.rightPath) {
+        const listed = await window.myFileSync.adsList({ path: row.rightPath })
+        if (!cancelled && listed.ok) setRightManifest(listed.value.manifest)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [row])
 
   if (!row) return null
 
-  const streams = [
-    ...(row.left?.adsManifest ?? []),
-    ...(row.right?.adsManifest ?? []),
-  ].filter((s, i, arr) => arr.findIndex((x) => x.name === s.name) === i)
+  const streams = [...leftManifest, ...rightManifest].filter(
+    (s, i, arr) => arr.findIndex((x) => x.name === s.name) === i,
+  )
 
   async function loadPreview(hostPath: string | undefined, streamName: string): Promise<void> {
     if (!hostPath) return
@@ -43,6 +63,7 @@ export function RowDetailPanel({ row, onClose }: RowDetailProps) {
       </header>
       <p className="row-detail-meta">
         {row.action} · {row.category} · ADS {row.adsDelta.equal ? 'equal' : 'diff'}
+        {row.left?.isDir || row.right?.isDir ? ' · folder (tree)' : ''}
       </p>
       {streams.length > 0 ? (
         <table className="stream-table">
@@ -56,8 +77,8 @@ export function RowDetailPanel({ row, onClose }: RowDetailProps) {
           </thead>
           <tbody>
             {streams.map((s) => {
-              const left = row.left?.adsManifest.find((e) => e.name === s.name)
-              const right = row.right?.adsManifest.find((e) => e.name === s.name)
+              const left = leftManifest.find((e) => e.name === s.name)
+              const right = rightManifest.find((e) => e.name === s.name)
               return (
                 <tr key={s.name}>
                   <td>{s.name}</td>

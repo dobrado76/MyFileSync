@@ -1,15 +1,21 @@
 import type { BrowserWindow } from 'electron'
-import { computeStats, rowMatchesFilter } from '@shared/compare/classify'
 import type { CompareFilter, CompareRun, CompareRow } from '@shared/schemas/compare'
 import type { JobFile } from '@shared/schemas/job'
 import { loadJob } from '../jobs/store'
 import { openDb, loadStatesForPair } from '../db/syncState'
 import { getFiles } from '../compare/getFiles'
+import {
+  CompareRowStore,
+  hydrateRowPaths,
+  openCompareRowStore,
+} from '../compare/rowStore'
 import { preflightPairUncPaths } from '../remote/preflight'
 
 export type CompareEvent =
   | { type: 'compare:progress'; runId: string; done: number; total: number; currentPath?: string }
   | { type: 'compare:done'; runId: string; stats: CompareRun['stats'] }
+
+export type ActiveCompareRun = CompareRun & { store: CompareRowStore }
 
 const PROGRESS_INTERVAL_MS = 100
 
@@ -57,11 +63,11 @@ function createCompareProgress(runId: string, emit: (event: CompareEvent) => voi
   }
 }
 
-const compareRuns = new Map<string, CompareRun>()
+const compareRuns = new Map<string, ActiveCompareRun>()
 const cancelFlags = new Map<string, boolean>()
 let activeCompareRunId: string | null = null
 
-export function getCompareRun(runId: string): CompareRun | undefined {
+export function getCompareRun(runId: string): ActiveCompareRun | undefined {
   return compareRuns.get(runId)
 }
 
@@ -81,7 +87,7 @@ export async function runCompare(
   jobId: string,
   emit: (event: CompareEvent) => void,
   jobOverride?: JobFile,
-): Promise<CompareRun> {
+): Promise<ActiveCompareRun> {
   let job: JobFile
   if (jobOverride) {
     job = jobOverride
@@ -93,8 +99,13 @@ export async function runCompare(
     job = jobResult.value
   }
 
-  const rows: CompareRow[] = []
-  let equalCount = 0
+  const previous = [...compareRuns.values()]
+  for (const prior of previous) {
+    await prior.store.dispose().catch(() => undefined)
+  }
+  compareRuns.clear()
+
+  const store = await openCompareRowStore(runId)
   activeCompareRunId = runId
   if (cancelFlags.get(runId) !== true) {
     cancelFlags.set(runId, false)
@@ -102,10 +113,12 @@ export async function runCompare(
 
   const enabledPairs = job.pairs.filter((p) => p.enabled)
   if (enabledPairs.length === 0) {
+    await store.dispose()
     throw new Error('No enabled folder pairs. Edit the job and enable at least one pair.')
   }
   for (const pair of enabledPairs) {
     if (!pair.left.trim() || !pair.right.trim()) {
+      await store.dispose()
       throw new Error('Folder paths are not set. Edit the job and choose left and right folders.')
     }
   }
@@ -133,6 +146,7 @@ export async function runCompare(
         pair,
         job,
         pairStates,
+        onDiff: (row) => store.append(row),
         onProgress: (currentPath) => {
           progress.note(currentPath)
         },
@@ -141,27 +155,25 @@ export async function runCompare(
 
       if (cancelFlags.get(runId)) break
 
-      for (const row of result.rows) {
-        rows.push(row)
-      }
-      equalCount += result.equalCount
+      store.addEquals(result.equalCount)
       pairIndex++
     }
   } finally {
     progress.stop()
     if (syncDb) await syncDb.close()
     if (activeCompareRunId === runId) activeCompareRunId = null
+    await store.close()
   }
 
-  const run: CompareRun = {
+  const run: ActiveCompareRun = {
     runId,
     jobId,
     job,
-    rows,
-    extraEqual: equalCount,
-    stats: computeStats(rows, equalCount),
+    extraEqual: store.getStats().equal,
+    stats: store.getStats(),
     cancelled: cancelFlags.get(runId) === true,
     createdAt: Date.now(),
+    store,
   }
 
   compareRuns.set(runId, run)
@@ -172,26 +184,23 @@ export async function runCompare(
 export function setRowIncluded(runId: string, rowId: string, included: boolean): boolean {
   const run = compareRuns.get(runId)
   if (!run) return false
-  const row = run.rows.find((r) => r.id === rowId)
-  if (!row) return false
-  row.included = included
-  run.stats = computeStats(run.rows, run.extraEqual)
-  return true
+  const ok = run.store.setIncluded(rowId, included)
+  if (ok) run.stats = run.store.getStats()
+  return ok
 }
 
-export function getCompareRows(
+export async function getCompareRows(
   runId: string,
   offset: number,
   limit: number,
   filter: CompareFilter = 'all',
-): { rows: CompareRow[]; total: number } {
+): Promise<{ rows: CompareRow[]; total: number }> {
   const run = compareRuns.get(runId)
   if (!run) return { rows: [], total: 0 }
-
-  const filtered = run.rows.filter((row) => rowMatchesFilter(row, filter))
+  const page = await run.store.getPage(offset, limit, filter)
   return {
-    rows: filtered.slice(offset, offset + limit),
-    total: filtered.length,
+    rows: page.rows.map((row) => hydrateRowPaths(row, run.job)),
+    total: page.total,
   }
 }
 

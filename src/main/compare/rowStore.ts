@@ -1,7 +1,6 @@
 import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import path from 'node:path'
-import { app } from 'electron'
 import {
   accountDiff,
   accountEquals,
@@ -217,6 +216,7 @@ export class CompareRowStore {
 }
 
 export async function openCompareRowStore(runId: string): Promise<CompareRowStore> {
+  const { app } = await import('electron')
   const dir = path.join(app.getPath('userData'), 'compare')
   await fsp.mkdir(dir, { recursive: true })
   const entries = await fsp.readdir(dir)

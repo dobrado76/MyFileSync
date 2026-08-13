@@ -19,7 +19,7 @@ Locked product and technical decisions. Update this file when behavior changes.
 | **D13** | SFTP/FTPS: **primary stream only**; document ADS drop | Protocol cannot carry NTFS ADS |
 | **D14** | Renderer has **no Node integration**; typed preload IPC + Zod | Isolated UI process |
 | **D15** | Every new job preference in **`jobSchema`** (Zod) so export/import round-trips | Avoid parallel export allowlists |
-| **D16** | Compare is BackupMirror **`GetFiles`**: paired folder walk, `$DATA` then ADS, diffs only | Two full-tree maps + merge overflowed the stack on large trees |
+| **D16** | Compare is BackupMirror **`GetFiles`**: paired walk, `$DATA` then ADS, **collapsed missing trees**, JSONL change list | 75M-file trees cannot live as in-memory row objects |
 
 ## Open follow-ups
 
