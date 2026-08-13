@@ -1,0 +1,50 @@
+---
+description: MyFileSync agent rules — standalone sync/backup app
+globs:
+alwaysApply: true
+---
+
+# MyFileSync agent rules
+
+## Scope
+
+- This repo is **MyFileSync** — a standalone Windows-first folder sync/backup app (Electron + React).
+- **Do not** reference, import, copy from, or depend on **MyFileExplorer**, **BackupMirror** source, or any other project.
+- Canonical plan: `PLAN.md`. Specs: `docs/`. Implement against those files only.
+- Legacy **BackupMirror** behavior may be referenced from specs for parity; reimplement in this repo.
+
+## Architecture
+
+- Electron **main** owns compare/sync engine, Win32 ADS, SQLite, job files.
+- Renderer is React + Zustand; **no Node integration**.
+- Typed preload IPC + Zod; Result envelope `{ ok, value } | { ok: false, error }`.
+- App state under Electron `userData` — job JSON, sync DB, logs, settings.
+
+## ADS (core differentiator)
+
+- NTFS→NTFS: use **CopyFileEx** / **CopyFileW** or explicit **copyStreams** — never `$DATA`-only stream pipe for large files.
+- Compare and sync **alternate stream manifests** (name + size; optional hash).
+- Optional compare cache in file ADS (`MD5`, folder stats) is **per-job opt-in** (`ads.writeCacheToAds`).
+- Plain-language errors for read-only folders and permission denied — not raw EPERM.
+
+## Safety
+
+- Validate/normalize all paths in main before IO.
+- Recycle Bin default for sync deletes (D6).
+- Mirror with deletes requires user confirm when delete count &gt; 0.
+- Do not browse or exfiltrate user disks beyond what the task requires.
+
+## Settings and jobs
+
+- Every new job field must be added to **`jobSchema`** (Zod) so export/import round-trips.
+- Do not invent parallel export allowlists for job preferences.
+
+## Specs vs code
+
+- Until scaffold exists, prefer updating `docs/` + `PLAN.md` when product decisions change.
+- Keep [docs/DECISIONS.md](docs/DECISIONS.md) in sync when locking behavior.
+
+## Tests
+
+- Pure compare/ADS path logic in `shared/` — unit test with Vitest.
+- Win32 integration tests manual or Windows CI only.

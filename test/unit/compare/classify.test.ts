@@ -1,0 +1,51 @@
+import { describe, expect, it } from 'vitest'
+import { classifyPair, computeAdsDelta, planAction } from '@shared/compare/classify'
+import { createDefaultJob } from '@shared/schemas/job'
+import type { SideRecord } from '@shared/schemas/compare'
+
+const job = createDefaultJob('test')
+
+function side(partial: Partial<SideRecord> & Pick<SideRecord, 'relPath'>): SideRecord {
+  return {
+    isDir: false,
+    dataSize: 100,
+    mtimeMs: 1000,
+    adsManifest: [],
+    ...partial,
+  }
+}
+
+describe('classify', () => {
+  it('detects equal rows', () => {
+    const left = side({ relPath: 'a.txt' })
+    const right = side({ relPath: 'a.txt' })
+    const row = classifyPair('pair', 'a.txt', left, right, job)
+    expect(row.category).toBe('equal')
+    expect(row.action).toBe('Skip')
+  })
+
+  it('detects ADS-only diff', () => {
+    const left = side({
+      relPath: 'a.txt',
+      adsManifest: [{ name: 'Zone.Identifier', size: 10 }],
+    })
+    const right = side({ relPath: 'a.txt' })
+    const row = classifyPair('pair', 'a.txt', left, right, job)
+    expect(row.category).toBe('adsDiff')
+    expect(row.action).toBe('UpdateStreamsOnly')
+  })
+
+  it('plans mirror delete for right-only', () => {
+    const action = planAction('rightOnly', 'mirror')
+    expect(action.action).toBe('Delete')
+  })
+
+  it('computes ads delta', () => {
+    const delta = computeAdsDelta(
+      [{ name: 'a', size: 1 }],
+      [{ name: 'a', size: 1 }, { name: 'b', size: 2 }],
+    )
+    expect(delta.added).toBe(1)
+    expect(delta.equal).toBe(false)
+  })
+})

@@ -1,0 +1,8 @@
+out/
+release/
+dist/
+node_modules/
+*.log
+.DS_Store
+Thumbs.db
+test/fixtures/ntfs/generated/
