@@ -95,6 +95,7 @@ export type MyFileSyncApi = {
   jobDelete: (req: { id: string }) => Promise<Result<{ ok: true }>>
   jobImportJson: (req: { path: string }) => Promise<Result<{ id: string }>>
   jobImportIni: (req: { path: string }) => Promise<Result<{ id: string; warnings: string[] }>>
+  jobImportFfs: (req: { path: string }) => Promise<Result<{ id: string; warnings: string[] }>>
   compareRun: (req: { jobId: string; runId?: string }) => Promise<Result<CompareRunResponse>>
   compareGetRows: (req: {
     runId: string

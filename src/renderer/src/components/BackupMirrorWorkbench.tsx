@@ -1,3 +1,4 @@
+import { useCallback, useRef, useState, type PointerEvent } from 'react'
 import type { JobFile, JobSummary } from '@shared/schemas/job'
 import type { CompareFilter, CompareRow, CompareStats, FolderTreeNode } from '@shared/schemas/compare'
 import { CompareGrid } from './CompareGrid'
@@ -7,6 +8,9 @@ import type { LogEntry } from '../store/workbenchStore'
 import type { TreeFolderAction } from './CompareFolderTree'
 
 export type MainTab = 'options' | 'compare' | 'filters' | 'log'
+
+const PAIR_LIST_MIN = 40
+const PAIR_SPLIT_RESERVE = 220
 
 type BackupMirrorWorkbenchProps = {
   jobs: JobSummary[]
@@ -26,14 +30,15 @@ type BackupMirrorWorkbenchProps = {
   onMainTabChange: (tab: MainTab) => void
   onSelectJob: (id: string) => void
   onNewJob: () => void
+  onImportJob: () => void
   onChangeJob: (patch: Partial<JobFile>) => void
-  onBrowsePath: (side: 'left' | 'right') => void
+  onBrowsePath: (index: number, side: 'left' | 'right') => void
+  onSetPairPath: (index: number, side: 'left' | 'right', path: string) => void
   onVariantChange: (variant: JobFile['variant']) => void
   onAddPair: () => void
-  onRemovePair: () => void
-  onMovePairUp: () => void
-  onMovePairDown: () => void
-  onFlipPair: () => void
+  onRemovePair: (index: number) => void
+  onMovePair: (index: number, direction: -1 | 1) => void
+  onFlipPair: (index: number) => void
   onClearList: () => void
   onSaveJob: () => void
   onDeleteJob: () => void
@@ -67,13 +72,14 @@ export function BackupMirrorWorkbench(props: BackupMirrorWorkbenchProps) {
     onMainTabChange,
     onSelectJob,
     onNewJob,
+    onImportJob,
     onChangeJob,
     onBrowsePath,
+    onSetPairPath,
     onVariantChange,
     onAddPair,
     onRemovePair,
-    onMovePairUp,
-    onMovePairDown,
+    onMovePair,
     onFlipPair,
     onClearList,
     onSaveJob,
@@ -90,7 +96,42 @@ export function BackupMirrorWorkbench(props: BackupMirrorWorkbenchProps) {
   } = props
 
   const pair = activeJob?.pairs[activePairIndex]
+  const treeRootLabel =
+    activeJob && activeJob.pairs.length === 1
+      ? pair?.left.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || 'All folders'
+      : 'All folders'
   const fileCount = compareStats?.total ?? compareRows.length
+  const mainColRef = useRef<HTMLDivElement>(null)
+  const pairListRef = useRef<HTMLDivElement>(null)
+  const [pairListHeight, setPairListHeight] = useState<number | null>(null)
+  const [pairSplitDragging, setPairSplitDragging] = useState(false)
+
+  const onPairSplitPointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    const column = mainColRef.current
+    const list = pairListRef.current
+    if (!column || !list) return
+    const startY = event.clientY
+    const startHeight = list.getBoundingClientRect().height
+    const max = Math.max(PAIR_LIST_MIN, column.clientHeight - PAIR_SPLIT_RESERVE)
+    const target = event.currentTarget
+    target.setPointerCapture(event.pointerId)
+    setPairSplitDragging(true)
+    setPairListHeight(startHeight)
+
+    const onMove = (move: globalThis.PointerEvent) => {
+      setPairListHeight(Math.min(max, Math.max(PAIR_LIST_MIN, startHeight + move.clientY - startY)))
+    }
+    const onUp = () => {
+      setPairSplitDragging(false)
+      target.removeEventListener('pointermove', onMove)
+      target.removeEventListener('pointerup', onUp)
+      target.removeEventListener('pointercancel', onUp)
+    }
+    target.addEventListener('pointermove', onMove)
+    target.addEventListener('pointerup', onUp)
+    target.addEventListener('pointercancel', onUp)
+  }, [])
 
   return (
     <div className="bm-workbench">
@@ -131,6 +172,14 @@ export function BackupMirrorWorkbench(props: BackupMirrorWorkbenchProps) {
           <button type="button" className="button button-sm" onClick={onNewJob} title="Create a new empty job">
             + New
           </button>
+          <button
+            type="button"
+            className="button button-sm"
+            onClick={onImportJob}
+            title="Import a FreeFileSync, BackupMirror INI, or MyFileSync job file"
+          >
+            Import…
+          </button>
 
           {activeJob ? (
             <>
@@ -156,36 +205,6 @@ export function BackupMirrorWorkbench(props: BackupMirrorWorkbenchProps) {
               <span className="bm-toolbar-divider" aria-hidden="true" />
 
               <div className="bm-toolbar-actions">
-                <button
-                  type="button"
-                  className="button button-sm"
-                  title="Add another source/target folder pair"
-                  onClick={onAddPair}
-                >
-                  + Add
-                </button>
-                <button type="button" className="button button-sm" title="Move pair up" onClick={onMovePairUp}>
-                  ↑
-                </button>
-                <button type="button" className="button button-sm" title="Move pair down" onClick={onMovePairDown}>
-                  ↓
-                </button>
-                <button
-                  type="button"
-                  className="button button-sm"
-                  title="Swap source and target folders for this pair"
-                  onClick={onFlipPair}
-                >
-                  ⇄ Flip
-                </button>
-                <button
-                  type="button"
-                  className="button button-sm"
-                  title="Remove the current folder pair"
-                  onClick={onRemovePair}
-                >
-                  Del pair
-                </button>
                 <button
                   type="button"
                   className="button button-sm"
@@ -226,39 +245,21 @@ export function BackupMirrorWorkbench(props: BackupMirrorWorkbenchProps) {
         <div className="empty-workbench">
           <p className="empty-workbench-title">No job loaded</p>
           <p className="empty-workbench-hint">
-            Click <strong>+ New</strong> to create a job, then set source and target folders.
+            Click <strong>+ New</strong> to create a job, or <strong>Import…</strong> to load a
+            FreeFileSync <code>.ffs_gui</code> file.
           </p>
         </div>
       ) : (
         <>
           {mainTab === 'options' && (
-            <div className="bm-main-column">
-                <div className="bm-path-bar">
-                  <label className="bm-path-field">
+            <div
+              className={`bm-main-column${pairSplitDragging ? ' bm-pair-split-dragging' : ''}`}
+              ref={mainColRef}
+            >
+                <div className="bm-pair-stack">
+                  <div className="bm-pair-head">
                     <span className="bm-label">Source folder</span>
-                    <div className="bm-path-row">
-                      <input className="settings-input" readOnly value={pair?.left ?? ''} />
-                      <button type="button" className="button" disabled={busy} onClick={() => onBrowsePath('left')}>
-                        …
-                      </button>
-                    </div>
-                  </label>
-
-                  <div className="bm-path-middle">
-                    {activeJob.pairs.length > 1 ? (
-                      <select
-                        className="bm-control bm-pair-select"
-                        value={activePairIndex}
-                        onChange={(e) => onPairIndexChange(Number(e.target.value))}
-                        title="Folder pair"
-                      >
-                        {activeJob.pairs.map((p, i) => (
-                          <option key={p.id} value={i}>
-                            Pair {i + 1}
-                          </option>
-                        ))}
-                      </select>
-                    ) : null}
+                    <div className="bm-pair-head-mid">
                     <select
                       className="bm-control bm-variant-select"
                       value={activeJob.variant}
@@ -296,18 +297,139 @@ export function BackupMirrorWorkbench(props: BackupMirrorWorkbenchProps) {
                       <option value="content:md5">MD5 content</option>
                       <option value="content:sha256">SHA-256 content</option>
                     </select>
-                  </div>
-
-                  <label className="bm-path-field">
-                    <span className="bm-label">Target folder</span>
-                    <div className="bm-path-row">
-                      <input className="settings-input" readOnly value={pair?.right ?? ''} />
-                      <button type="button" className="button" disabled={busy} onClick={() => onBrowsePath('right')}>
-                        …
-                      </button>
                     </div>
-                  </label>
+                    <span className="bm-label">Target folder</span>
+                    <span className="bm-pair-head-actions" />
+                  </div>
+                  <div
+                    className="bm-pair-list"
+                    ref={pairListRef}
+                    style={
+                      pairListHeight == null
+                        ? undefined
+                        : { height: pairListHeight, maxHeight: 'none' }
+                    }
+                  >
+                    {activeJob.pairs.map((p, i) => (
+                      <div
+                        key={p.id}
+                        className={`bm-pair-row${i === activePairIndex ? ' bm-pair-row-active' : ''}`}
+                        onClick={() => onPairIndexChange(i)}
+                      >
+                        <div className="bm-path-row">
+                          <input
+                            className="settings-input"
+                            type="text"
+                            spellCheck={false}
+                            autoComplete="off"
+                            value={p.left}
+                            title={p.left}
+                            placeholder="Source folder"
+                            onFocus={() => onPairIndexChange(i)}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => onSetPairPath(i, 'left', e.target.value)}
+                          />
+                          <button
+                            type="button"
+                            className="button"
+                            disabled={busy}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              onBrowsePath(i, 'left')
+                            }}
+                          >
+                            …
+                          </button>
+                        </div>
+                        <button
+                          type="button"
+                          className="button bm-pair-flip"
+                          title="Swap source and target"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            onFlipPair(i)
+                          }}
+                        >
+                          ⇄
+                        </button>
+                        <div className="bm-path-row">
+                          <input
+                            className="settings-input"
+                            type="text"
+                            spellCheck={false}
+                            autoComplete="off"
+                            value={p.right}
+                            title={p.right}
+                            placeholder="Target folder"
+                            onFocus={() => onPairIndexChange(i)}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => onSetPairPath(i, 'right', e.target.value)}
+                          />
+                          <button
+                            type="button"
+                            className="button"
+                            disabled={busy}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              onBrowsePath(i, 'right')
+                            }}
+                          >
+                            …
+                          </button>
+                        </div>
+                        <div className="bm-pair-row-actions">
+                          <button
+                            type="button"
+                            className="button button-sm"
+                            title="Move pair up"
+                            disabled={i === 0}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              onMovePair(i, -1)
+                            }}
+                          >
+                            ↑
+                          </button>
+                          <button
+                            type="button"
+                            className="button button-sm"
+                            title="Move pair down"
+                            disabled={i === activeJob.pairs.length - 1}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              onMovePair(i, 1)
+                            }}
+                          >
+                            ↓
+                          </button>
+                          <button
+                            type="button"
+                            className="button button-sm"
+                            title="Remove this folder pair"
+                            disabled={activeJob.pairs.length <= 1}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              onRemovePair(i)
+                            }}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <button type="button" className="bm-add-pair" onClick={onAddPair}>
+                    + Add folder pair
+                  </button>
                 </div>
+                <div
+                  className="bm-pair-split-gutter"
+                  role="separator"
+                  aria-orientation="horizontal"
+                  aria-label="Resize folder pair list"
+                  title="Drag to show more or fewer folder pairs"
+                  onPointerDown={onPairSplitPointerDown}
+                />
 
                 <CompareGrid
                   rows={compareRows}
@@ -315,7 +437,7 @@ export function BackupMirrorWorkbench(props: BackupMirrorWorkbenchProps) {
                   busy={compareBusy || syncBusy}
                   folderTree={compareFolderTree}
                   pathPrefix={comparePathPrefix}
-                  rootLabel={pair?.left.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || 'All folders'}
+                  rootLabel={treeRootLabel}
                   onFilterChange={onFilterChange}
                   onSelectFolder={onSelectFolder}
                   onFolderAction={onFolderAction}

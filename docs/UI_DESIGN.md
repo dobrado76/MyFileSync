@@ -2,7 +2,7 @@
 
 FreeFileSync-inspired **compare-first** layout with modern Electron chrome (dark/light).
 
-The workbench uses a **header toolbar** (job picker, paths, Compare / Sync / Cancel) and tabs: **Options | Compare | Filters | Log**. Settings live in a header modal, not on the main surface.
+The workbench uses a **header toolbar** (job picker, Compare / Sync / Cancel) and tabs: **Options | Compare | Filters | Log**. Settings live in a header modal, not on the main surface.
 
 ## Layout
 
@@ -10,15 +10,20 @@ The workbench uses a **header toolbar** (job picker, paths, Compare / Sync / Can
 ┌─────────────────────────────────────────────────────────────┐
 │ MyFileSync          [Settings]                              │
 ├─────────────────────────────────────────────────────────────┤
-│ Job ▾  Name  [+ New] [Save]   Source …   Target …           │
-│ [Compare] [Sync] [Cancel]     Options | Compare | Filters | Log │
+│ Job ▾  Name  [+ New] [Import…] [Save] [Delete]  [Clear]     │
+│ Options | Compare | Filters | Log                           │
+├─────────────────────────────────────────────────────────────┤
+│ Source folder     [Mirror ▾] [Size+time ▾]   Target folder  │
+│ [F:\Photos …] [⇄] [Z:\Backup\Photos …]            [↑][↓][×] │
+│ [F:\Docs …]   [⇄] [Z:\Backup\Docs …]              [↑][↓][×] │
+│ + Add folder pair                                           │
 ├──────────────┬──────────────────────────────────────────────┤
 │ Folders      │ ☑  Source            Action      Target      │
 │ ▾ Photos     │    a.jpg             Update      a.jpg       │
 │   ▾ 2024     │    b.jpg             Create      —           │
 │     trip     │                                              │
 ├──────────────┴──────────────────────────────────────────────┤
-│ Comparing… 12,450 items · path                      1:05    │
+│ [Compare] [Sync]  Files: 12,450              [Cancel]       │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -26,8 +31,11 @@ The workbench uses a **header toolbar** (job picker, paths, Compare / Sync / Can
 
 ### Jobs (toolbar)
 
-- Job dropdown, name field, + New, Save, Delete.
-- Source / target path fields with browse; pair add/remove/flip.
+- Job dropdown, name field, + New, **Import…** (FreeFileSync `.ffs_gui` / `.ffs_batch`, INI, JSON), Save, Delete, Clear.
+
+### Folder pairs (Options tab)
+
+All pairs are stacked and visible at once (FreeFileSync-style) — not a dropdown. Column headers once: **Source folder** | variant + compare method | **Target folder**. Each row is `[left path] […]` `⇄` `[right path] […]` then ↑ ↓ ×. Path fields are normal text: type, copy, paste, or Browse (**…**). **+ Add folder pair** sits under the list. A **horizontal splitter** under the pair panel resizes how much of the list is shown; the list scrollbar appears only when pairs overflow that height. Compare/Sync always run every enabled pair; the tree root is **All folders** when there is more than one pair.
 
 ### Options tab
 
@@ -113,7 +121,7 @@ Default **system** theme; persist in `settings.json`.
 
 ## Non-goals (UI)
 
-- Dual **browse** trees for picking source/target folders (FFS folder pickers — we use path fields + OS browse dialog). The **results** folder tree on the left of the change list is in scope.
+- Dual **browse** trees for picking source/target folders (FFS folder pickers — we use editable path fields plus an OS browse dialog). The **results** folder tree on the left of the change list is in scope.
 - Ribbon UI.
 
 ## Related

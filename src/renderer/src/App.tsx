@@ -36,16 +36,17 @@ export default function App() {
     newJob,
     saveActiveJob,
     deleteActiveJob,
+    importJobFile,
     updateActiveJob,
     setMainTab,
     setActivePairIndex,
     addPair,
-    removeActivePair,
-    moveActivePairUp,
-    moveActivePairDown,
-    flipActivePair,
+    removePair,
+    movePair,
+    flipPair,
+    setPairPath,
     clearCompareList,
-    browseActivePairPath,
+    browsePairPath,
     runCompare,
     runSync,
     confirmSync,
@@ -56,6 +57,7 @@ export default function App() {
     handleFolderAction,
     toggleRowIncluded,
     browseUpdatesFolder,
+    setUpdatesFolder,
     checkForUpdates,
     runUpdate,
     dismissUpdate,
@@ -116,14 +118,15 @@ export default function App() {
         onMainTabChange={setMainTab}
         onSelectJob={(id) => void selectJob(id)}
         onNewJob={() => void newJob()}
+        onImportJob={() => void importJobFile()}
         onChangeJob={updateActiveJob}
-        onBrowsePath={(side) => void browseActivePairPath(side)}
+        onBrowsePath={(index, side) => void browsePairPath(index, side)}
+        onSetPairPath={setPairPath}
         onVariantChange={(variant) => updateActiveJob({ variant })}
         onAddPair={addPair}
-        onRemovePair={removeActivePair}
-        onMovePairUp={moveActivePairUp}
-        onMovePairDown={moveActivePairDown}
-        onFlipPair={flipActivePair}
+        onRemovePair={removePair}
+        onMovePair={movePair}
+        onFlipPair={flipPair}
         onClearList={clearCompareList}
         onSaveJob={() => void saveActiveJob()}
         onDeleteJob={() => {
@@ -154,6 +157,7 @@ export default function App() {
         busy={busy}
         onClose={closeSettings}
         onBrowseUpdatesFolder={() => void browseUpdatesFolder()}
+        onUpdatesFolderChange={setUpdatesFolder}
         onCheckForUpdates={() => void checkForUpdates()}
         onExportSettings={() => void exportSettings()}
         onImportSettings={() => void importSettings()}

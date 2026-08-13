@@ -29,6 +29,7 @@ const api: MyFileSyncApi = {
   jobDelete: (req) => invoke(IPC_CHANNELS.JOB_DELETE, req),
   jobImportJson: (req) => invoke(IPC_CHANNELS.JOB_IMPORT_JSON, req),
   jobImportIni: (req) => invoke(IPC_CHANNELS.JOB_IMPORT_INI, req),
+  jobImportFfs: (req) => invoke(IPC_CHANNELS.JOB_IMPORT_FFS, req),
   compareRun: (req) => invoke(IPC_CHANNELS.COMPARE_RUN, req),
   compareGetRows: (req) => invoke(IPC_CHANNELS.COMPARE_GET_ROWS, req),
   compareGetTree: (req) => invoke(IPC_CHANNELS.COMPARE_GET_TREE, req),

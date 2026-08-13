@@ -7,6 +7,7 @@ type SettingsModalProps = {
   busy: boolean
   onClose: () => void
   onBrowseUpdatesFolder: () => void
+  onUpdatesFolderChange: (path: string) => void
   onCheckForUpdates: () => void
   onExportSettings: () => void
   onImportSettings: () => void
@@ -19,6 +20,7 @@ export function SettingsModal({
   busy,
   onClose,
   onBrowseUpdatesFolder,
+  onUpdatesFolderChange,
   onCheckForUpdates,
   onExportSettings,
   onImportSettings,
@@ -46,6 +48,7 @@ export function SettingsModal({
             updatesStatus={updatesStatus}
             busy={busy}
             onBrowseUpdatesFolder={onBrowseUpdatesFolder}
+            onUpdatesFolderChange={onUpdatesFolderChange}
             onCheckForUpdates={onCheckForUpdates}
             onExportSettings={onExportSettings}
             onImportSettings={onImportSettings}

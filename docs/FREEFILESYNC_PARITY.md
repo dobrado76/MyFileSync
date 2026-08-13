@@ -63,6 +63,7 @@ Legend: **Yes** / **Partial** / **No** / **Better** (MyFileSync does more)
 | Progress during compare and sync | Yes | Yes |
 | Error list / log | Yes | Yes |
 | Multiple folder pairs per job | Yes | Yes |
+| Import `.ffs_gui` / `.ffs_batch` | Yes | Yes |
 | Dark theme | No official | Yes |
 
 **Never** sacrifice ADS fidelity for FFS parity on NTFS local paths.

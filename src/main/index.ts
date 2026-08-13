@@ -9,6 +9,7 @@ import {
   loadWindowState,
   saveWindowState,
 } from './settings/windowState'
+import { attachEditContextMenu } from './ui/editContextMenu'
 
 const isDev = !app.isPackaged
 
@@ -84,6 +85,8 @@ async function createWindow(): Promise<void> {
     shell.openExternal(details.url)
     return { action: 'deny' }
   })
+
+  attachEditContextMenu(window)
 
   if (isDev && process.env['ELECTRON_RENDERER_URL']) {
     await window.loadURL(process.env['ELECTRON_RENDERER_URL'])

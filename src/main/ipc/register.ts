@@ -36,6 +36,7 @@ import { checkForUpdates } from '../updates/check'
 import { runInstaller } from '../updates/run'
 import { deleteJob, importJobJson, listJobs, loadJob, saveJob } from '../jobs/store'
 import { importIni } from '../jobs/importIni'
+import { importFfs } from '../jobs/importFfs'
 import {
   cancelCompareRun,
   dropCompareRows,
@@ -201,6 +202,13 @@ export function registerIpc(appVersion: string): void {
   })
   handle(IPC_CHANNELS.JOB_IMPORT_INI, jobImportPathRequestSchema, async (req) => {
     const imported = await importIni(requireAbsolute(req.path))
+    if (!imported.ok) return imported
+    const saved = await saveJob(imported.value.job)
+    if (!saved.ok) return saved
+    return ok({ id: saved.value.id, warnings: imported.value.warnings })
+  })
+  handle(IPC_CHANNELS.JOB_IMPORT_FFS, jobImportPathRequestSchema, async (req) => {
+    const imported = await importFfs(requireAbsolute(req.path))
     if (!imported.ok) return imported
     const saved = await saveJob(imported.value.job)
     if (!saved.ok) return saved

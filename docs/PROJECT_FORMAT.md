@@ -106,7 +106,21 @@ Export/import settings strips `window-state.json`.
 
 ## BackupMirror INI mapping
 
-Field mapping for old `optionsBackup.ini` files: [BACKUPMIRROR_MIGRATION.md](BACKUPMIRROR_MIGRATION.md). Not exposed in the UI.
+Field mapping for old `optionsBackup.ini` files: [BACKUPMIRROR_MIGRATION.md](BACKUPMIRROR_MIGRATION.md).
+
+## FreeFileSync import
+
+**Import…** on the job toolbar reads `.ffs_gui` and `.ffs_batch`:
+
+| FFS | MyFileSync |
+|-----|------------|
+| Folder pairs | `pairs[]` |
+| TimeAndSize / Content | `compare.method` sizeAndTime / content (MD5) |
+| Mirror / Update / Two-way (or Changes matrix) | `variant` |
+| RecycleBin deletion policy | `delete.useRecycleBin` |
+| Exclude `\folder\` and `*\name` | gitignore `/folder` and `name` |
+
+Not imported: IgnoreTimeShift, size/time-span filters, post-sync command, email, FFS versioning-on-delete (warning). ADS compare stays on — FFS does not sync streams.
 
 ## Versioning
 

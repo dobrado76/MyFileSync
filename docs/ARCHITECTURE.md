@@ -36,10 +36,12 @@ flowchart TB
 ```
 src/main/
   index.ts              # App bootstrap, window, IPC register
+  ui/editContextMenu.ts # Cut/Copy/Paste/Select All on text fields
   ipc/register.ts       # Zod-validated handlers
   jobs/
     store.ts            # Load/save job JSON
     importIni.ts        # BackupMirror INI → JSON
+    importFfs.ts        # FreeFileSync .ffs_gui / .ffs_batch → JSON
   compare/
     walk.ts             # Parallel directory traversal
     classify.ts         # Diff categories + ADS manifest diff

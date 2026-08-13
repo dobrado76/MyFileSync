@@ -3,6 +3,7 @@ type SettingsPanelProps = {
   updatesStatus: string
   busy: boolean
   onBrowseUpdatesFolder: () => void
+  onUpdatesFolderChange: (path: string) => void
   onCheckForUpdates: () => void
   onExportSettings: () => void
   onImportSettings: () => void
@@ -13,6 +14,7 @@ export function SettingsPanel({
   updatesStatus,
   busy,
   onBrowseUpdatesFolder,
+  onUpdatesFolderChange,
   onCheckForUpdates,
   onExportSettings,
   onImportSettings,
@@ -32,8 +34,11 @@ export function SettingsPanel({
             id="updates-folder"
             className="settings-input"
             type="text"
-            readOnly
-            value={updatesFolder || 'Not set'}
+            spellCheck={false}
+            autoComplete="off"
+            value={updatesFolder}
+            placeholder="Updates folder"
+            onChange={(e) => onUpdatesFolderChange(e.target.value)}
           />
           <button type="button" className="button" disabled={busy} onClick={onBrowseUpdatesFolder}>
             Browse…

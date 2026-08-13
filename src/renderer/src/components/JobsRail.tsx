@@ -5,10 +5,10 @@ type JobsRailProps = {
   activeJobId: string | null
   onSelect: (id: string) => void
   onNew: () => void
-  onImportIni: () => void
+  onImport: () => void
 }
 
-export function JobsRail({ jobs, activeJobId, onSelect, onNew, onImportIni }: JobsRailProps) {
+export function JobsRail({ jobs, activeJobId, onSelect, onNew, onImport }: JobsRailProps) {
   return (
     <aside className="jobs-rail">
       <div className="jobs-rail-header">
@@ -38,8 +38,8 @@ export function JobsRail({ jobs, activeJobId, onSelect, onNew, onImportIni }: Jo
         <button type="button" className="button button-block" onClick={onNew}>
           + New job
         </button>
-        <button type="button" className="button button-block" onClick={onImportIni}>
-          Import INI
+        <button type="button" className="button button-block" onClick={onImport}>
+          Import…
         </button>
       </div>
     </aside>

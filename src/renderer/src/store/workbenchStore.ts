@@ -95,17 +95,19 @@ type WorkbenchState = {
   saveActiveJob: () => Promise<void>
   deleteActiveJob: () => Promise<void>
   importIni: () => Promise<void>
+  importJobFile: () => Promise<void>
+  finishImport: (filePath: string, kind: 'ffs' | 'ini' | 'json') => Promise<void>
   loadJobFile: () => Promise<void>
   updateActiveJob: (patch: Partial<JobFile>) => void
   setMainTab: (tab: MainTab) => void
   setActivePairIndex: (index: number) => void
   addPair: () => void
-  removeActivePair: () => void
-  moveActivePairUp: () => void
-  moveActivePairDown: () => void
-  flipActivePair: () => void
+  removePair: (index: number) => void
+  movePair: (index: number, direction: -1 | 1) => void
+  flipPair: (index: number) => void
+  setPairPath: (index: number, side: 'left' | 'right', path: string) => void
   clearCompareList: () => void
-  browseActivePairPath: (side: 'left' | 'right') => Promise<void>
+  browsePairPath: (index: number, side: 'left' | 'right') => Promise<void>
   cancelOperation: () => Promise<void>
   runCompare: () => Promise<void>
   runSync: () => Promise<void>
@@ -116,6 +118,7 @@ type WorkbenchState = {
   handleFolderAction: (action: TreeFolderAction, path: string, deletes: number) => Promise<void>
   toggleRowIncluded: (rowId: string, included: boolean) => Promise<void>
   browseUpdatesFolder: () => Promise<void>
+  setUpdatesFolder: (path: string) => void
   checkForUpdates: () => Promise<void>
   runUpdate: () => Promise<void>
   dismissUpdate: () => void
@@ -256,25 +259,81 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       filters: [{ name: 'INI', extensions: ['ini'] }],
     })
     if (!picked.ok || !picked.value.path) return
-    const imported = await window.myFileSync.jobImportIni({ path: picked.value.path })
-    if (!imported.ok) {
-      set({ statusText: imported.error.message })
-      return
+    await get().finishImport(picked.value.path, 'ini')
+  },
+
+  importJobFile: async () => {
+    const picked = await window.myFileSync.pickFile({
+      title: 'Import job',
+      filters: [
+        { name: 'FreeFileSync', extensions: ['ffs_gui', 'ffs_batch'] },
+        { name: 'BackupMirror INI', extensions: ['ini'] },
+        { name: 'MyFileSync job', extensions: ['json'] },
+      ],
+    })
+    if (!picked.ok || !picked.value.path) return
+    const lower = picked.value.path.toLowerCase()
+    const kind = lower.endsWith('.ini')
+      ? 'ini'
+      : lower.endsWith('.json')
+        ? 'json'
+        : 'ffs'
+    await get().finishImport(picked.value.path, kind)
+  },
+
+  finishImport: async (filePath: string, kind: 'ffs' | 'ini' | 'json') => {
+    let id: string
+    let warnings: string[] = []
+    if (kind === 'json') {
+      const imported = await window.myFileSync.jobImportJson({ path: filePath })
+      if (!imported.ok) {
+        set({ statusText: imported.error.message })
+        return
+      }
+      id = imported.value.id
+    } else if (kind === 'ini') {
+      const imported = await window.myFileSync.jobImportIni({ path: filePath })
+      if (!imported.ok) {
+        set({ statusText: imported.error.message })
+        return
+      }
+      id = imported.value.id
+      warnings = imported.value.warnings
+    } else {
+      const imported = await window.myFileSync.jobImportFfs({ path: filePath })
+      if (!imported.ok) {
+        set({ statusText: imported.error.message })
+        return
+      }
+      id = imported.value.id
+      warnings = imported.value.warnings
     }
+    const label =
+      kind === 'ffs' ? 'FreeFileSync' : kind === 'ini' ? 'INI' : 'Job'
     set({
       logs: [
         {
           id: crypto.randomUUID(),
           time: new Date().toLocaleTimeString(),
-          message: `Imported INI (${imported.value.warnings.length} warnings)`,
+          message:
+            warnings.length > 0
+              ? `Imported ${label} (${warnings.length} notes)`
+              : `Imported ${label}`,
           level: 'success',
         },
         ...get().logs,
       ],
     })
     await get().refreshJobs()
-    await get().selectJob(imported.value.id)
-    set({ mainTab: 'options', statusText: 'INI imported — review paths and Save.' })
+    await get().selectJob(id)
+    const extra = warnings[0] ? ` ${warnings[0]}` : ''
+    set({
+      mainTab: 'options',
+      statusText:
+        kind === 'json'
+          ? 'Job loaded.'
+          : `${label} imported — review pairs and filters.${extra}`,
+    })
   },
 
   loadJobFile: async () => {
@@ -318,48 +377,57 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     })
   },
 
-  removeActivePair: () => {
+  removePair: (index) => {
     const { activeJob, activePairIndex } = get()
     if (!activeJob || activeJob.pairs.length <= 1) return
-    const pairs = activeJob.pairs.filter((_, i) => i !== activePairIndex)
+    const pairs = activeJob.pairs.filter((_, i) => i !== index)
+    const nextIndex =
+      activePairIndex === index
+        ? Math.min(index, pairs.length - 1)
+        : activePairIndex > index
+          ? activePairIndex - 1
+          : activePairIndex
     set({
       activeJob: { ...activeJob, pairs },
-      activePairIndex: Math.min(activePairIndex, pairs.length - 1),
+      activePairIndex: Math.max(0, nextIndex),
     })
   },
 
-  moveActivePairUp: () => {
-    const { activeJob, activePairIndex } = get()
-    if (!activeJob || activePairIndex <= 0) return
-    const pairs = [...activeJob.pairs]
-    const tmp = pairs[activePairIndex - 1]
-    pairs[activePairIndex - 1] = pairs[activePairIndex]!
-    pairs[activePairIndex] = tmp!
-    set({ activeJob: { ...activeJob, pairs }, activePairIndex: activePairIndex - 1 })
-  },
-
-  moveActivePairDown: () => {
-    const { activeJob, activePairIndex } = get()
-    if (!activeJob || activePairIndex >= activeJob.pairs.length - 1) return
-    const pairs = [...activeJob.pairs]
-    const tmp = pairs[activePairIndex + 1]
-    pairs[activePairIndex + 1] = pairs[activePairIndex]!
-    pairs[activePairIndex] = tmp!
-    set({ activeJob: { ...activeJob, pairs }, activePairIndex: activePairIndex + 1 })
-  },
-
-  flipActivePair: () => {
-    const { activeJob, activePairIndex } = get()
+  movePair: (index, direction) => {
+    const { activeJob } = get()
     if (!activeJob) return
-    const pair = activeJob.pairs[activePairIndex]
+    const dest = index + direction
+    if (dest < 0 || dest >= activeJob.pairs.length) return
+    const pairs = [...activeJob.pairs]
+    const tmp = pairs[dest]
+    pairs[dest] = pairs[index]!
+    pairs[index] = tmp!
+    set({ activeJob: { ...activeJob, pairs }, activePairIndex: dest })
+  },
+
+  flipPair: (index) => {
+    const { activeJob } = get()
+    if (!activeJob) return
+    const pair = activeJob.pairs[index]
     if (!pair) return
     set({
       activeJob: {
         ...activeJob,
-        pairs: activeJob.pairs.map((p, i) =>
-          i === activePairIndex ? { ...p, left: p.right, right: p.left } : p,
-        ),
+        pairs: activeJob.pairs.map((p, i) => (i === index ? { ...p, left: p.right, right: p.left } : p)),
       },
+      activePairIndex: index,
+    })
+  },
+
+  setPairPath: (index, side, path) => {
+    const { activeJob } = get()
+    if (!activeJob || !activeJob.pairs[index]) return
+    set({
+      activeJob: {
+        ...activeJob,
+        pairs: activeJob.pairs.map((p, i) => (i === index ? { ...p, [side]: path } : p)),
+      },
+      activePairIndex: index,
     })
   },
 
@@ -371,19 +439,20 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       statusText: 'Compare list cleared.',
     }),
 
-  browseActivePairPath: async (side) => {
-    const { activeJob, activePairIndex } = get()
-    const pair = activeJob?.pairs[activePairIndex]
+  browsePairPath: async (index, side) => {
+    const { activeJob } = get()
+    const pair = activeJob?.pairs[index]
     if (!pair) return
-    const picked = await window.myFileSync.pickFolder({ title: `Choose ${side === 'left' ? 'source' : 'target'} folder` })
+    const picked = await window.myFileSync.pickFolder({
+      title: `Choose ${side === 'left' ? 'source' : 'target'} folder`,
+    })
     if (!picked.ok || !picked.value.path) return
     set({
       activeJob: {
         ...activeJob!,
-        pairs: activeJob!.pairs.map((p, i) =>
-          i === activePairIndex ? { ...p, [side]: picked.value.path! } : p,
-        ),
+        pairs: activeJob!.pairs.map((p, i) => (i === index ? { ...p, [side]: picked.value.path! } : p)),
       },
+      activePairIndex: index,
     })
   },
 
@@ -585,12 +654,16 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   browseUpdatesFolder: async () => {
     const picked = await window.myFileSync.pickFolder({ title: 'Choose updates folder' })
     if (!picked.ok || !picked.value.path) return
-    await window.myFileSync.settingsSet({ updatesFolder: picked.value.path })
+    get().setUpdatesFolder(picked.value.path)
     set({
-      updatesFolder: picked.value.path,
       updateDismissed: false,
       updatesStatus: 'Updates folder set. Click Check for updates when ready.',
     })
+  },
+
+  setUpdatesFolder: (path) => {
+    set({ updatesFolder: path })
+    void window.myFileSync.settingsSet({ updatesFolder: path })
   },
 
   checkForUpdates: async () => {

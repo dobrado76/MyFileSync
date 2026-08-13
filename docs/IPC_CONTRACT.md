@@ -37,6 +37,7 @@ Prefix: `sync:` for engine, `job:` for jobs, `app:` for shell.
 | `job:export` | `{ id, path }` | `{ path }` |
 | `job:importJson` | `{ path }` | `{ id }` |
 | `job:importIni` | `{ path }` | `{ id, warnings: string[] }` |
+| `job:importFfs` | `{ path }` | `{ id, warnings: string[] }` |
 
 ### Compare
 

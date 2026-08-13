@@ -64,7 +64,21 @@ export function JobEditor({ job, open, onClose, onSave, onChange, onBrowse }: Jo
                 <label className="settings-label">
                   Left ({pair.leftType ?? 'local'})
                   <div className="settings-row">
-                    <input className="settings-input" readOnly value={pair.left || 'Not set'} />
+                    <input
+                      className="settings-input"
+                      type="text"
+                      spellCheck={false}
+                      autoComplete="off"
+                      value={pair.left}
+                      placeholder="Source folder"
+                      onChange={(e) =>
+                        onChange({
+                          pairs: job.pairs.map((p) =>
+                            p.id === pair.id ? { ...p, left: e.target.value } : p,
+                          ),
+                        })
+                      }
+                    />
                     <button type="button" className="button" onClick={() => onBrowse(pair.id, 'left')}>
                       Browse
                     </button>
@@ -73,7 +87,21 @@ export function JobEditor({ job, open, onClose, onSave, onChange, onBrowse }: Jo
                 <label className="settings-label">
                   Right ({pair.rightType ?? 'local'})
                   <div className="settings-row">
-                    <input className="settings-input" readOnly value={pair.right || 'Not set'} />
+                    <input
+                      className="settings-input"
+                      type="text"
+                      spellCheck={false}
+                      autoComplete="off"
+                      value={pair.right}
+                      placeholder="Target folder"
+                      onChange={(e) =>
+                        onChange({
+                          pairs: job.pairs.map((p) =>
+                            p.id === pair.id ? { ...p, right: e.target.value } : p,
+                          ),
+                        })
+                      }
+                    />
                     <button type="button" className="button" onClick={() => onBrowse(pair.id, 'right')}>
                       Browse
                     </button>

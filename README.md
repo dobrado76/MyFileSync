@@ -6,7 +6,7 @@ Most sync tools copy the file body only. Alternate streams — Mark-of-the-Web, 
 
 ## What it does
 
-- **Jobs** with one or more folder pairs (source / target)
+- **Jobs** with one or more folder pairs (source / target). Import FreeFileSync `.ffs_gui` files.
 - **Variants:** Mirror, Update, Automatic, Two-way
 - **Compare** by size + date/time, or MD5 / SHA-256 content hash
 - **ADS manifests** always listed and compared (name + size), even when `$DATA` matches
