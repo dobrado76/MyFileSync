@@ -6,77 +6,72 @@
 
 | Persona | Need |
 |---------|------|
-| **Power backup user** | Mirror large media/dev trees to second disk; wants exact NTFS metadata including ADS |
-| **AI/media archivist** | PNG/JPEG with generation params in ADS or side streams; must not lose metadata on backup |
-| **Legacy BackupMirror user** | Same mirror/update/auto workflows, modern UI, import old INI |
+| **Power backup user** | Mirror large media/dev trees to a second disk; exact NTFS metadata including ADS |
+| **AI/media archivist** | PNG/JPEG with generation params in ADS; must not lose metadata on backup |
 
-## Core user stories (v1 MVP)
+## User stories
 
-### US-1 Configure a job
+### Configure a job
 
 - Create a named job with one or more **folder pairs** (left → right paths).
-- Choose variant: **Mirror**, **Update**, **Automatic** (BackupMirror Auto).
-- Set compare method: size + time; optional content hash (MD5).
-- Set ADS policy: sync all streams (default NTFS→NTFS); exclude list (e.g. `Zone.Identifier`).
-- Optional: write compare cache to ADS (`MD5`, folder aggregates) — BackupMirror mode.
+- Choose variant: **Mirror**, **Update**, **Automatic**, or **Two-way**.
+- Set compare method: size + time, or content hash (MD5 / SHA-256).
+- Set ADS policy: sync all streams (default NTFS→NTFS); optional exclude list (e.g. `Zone.Identifier`).
+- Optional: write compare cache to ADS (`MD5`, folder aggregates).
 - Save job as JSON; export/import.
 
 **Acceptance:** Job round-trips export/import without data loss.
 
-### US-2 Compare folders
+### Compare folders
 
-- Click **Compare** → parallel walk of enabled pairs.
+- Click **Compare** → paired walk of each enabled folder pair (BackupMirror `GetFiles`).
 - Grid shows: relative path, left size/time, right size/time, action, ADS badge (stream count diff).
 - Color rows: equal (green), copy left→right (blue), copy right→left (teal), delete (red), conflict (yellow).
-- Filter toolbar: show only differences, left-only, right-only, ADS-differ, errors.
+- Filter toolbar: all, differences, source only, target only, ADS ≠.
 - Expand row → stream manifest table (name, left size, right size).
 
-**Acceptance:** Folder with only ADS difference (same `$DATA`) shows **Update** or **UpdateStreamsOnly**, not “equal”.
+**Acceptance:** Folder with only ADS difference (same `$DATA`) shows **Update streams only**, not “equal”.
 
-### US-3 Review and toggle actions
+### Review and toggle actions
 
-- Global checkboxes: enable/disable action types (create, update, delete, move).
-- Per-row include/exclude (BackupMirror parity).
-- Double-click row → detail dialog: attributes, stream list, single-run execute.
+- Per-row include/exclude.
+- Detail panel: attributes, stream list.
 
 **Acceptance:** Excluded rows are not executed on sync.
 
-### US-4 Synchronize
+### Synchronize
 
-- Click **Sync** → execute planned actions with progress bar, file count, ETA, cancel.
-- NTFS→NTFS: all configured ADS streams copied with primary `$DATA`.
-- Deletes default to **Recycle Bin**; Shift or setting for permanent with confirm.
-- Log panel captures errors with plain-language messages (read-only folder, permission denied).
+- Click **Sync** → execute included actions with progress, cancel.
+- NTFS→NTFS: configured ADS streams copied with primary `$DATA`.
+- Deletes default to **Recycle Bin**; confirm when mirror delete count &gt; 0.
+- Log panel captures errors in plain language (read-only folder, permission denied).
 
-**Acceptance:** After mirror sync, `BackupRead` stream list on destination matches source (minus excluded streams).
+**Acceptance:** After mirror sync, destination stream list matches source (minus excluded streams).
 
-### US-5 Import BackupMirror INI
+## Features
 
-- File → Import → select `optionsBackup.ini`.
-- Map directory lines and global flags to job JSON (see [BACKUPMIRROR_MIGRATION.md](BACKUPMIRROR_MIGRATION.md)).
-
-**Acceptance:** Sample INI from BackupMirror `bin` imports with correct pairs and Mirror/Update/Auto variant.
-
-## Feature matrix by phase
-
-| Feature | Phase |
-|---------|-------|
-| Mirror, Update, Automatic | 1 |
-| NTFS ADS sync | 1 |
-| Side-by-side compare grid | 1 |
-| Wildcard filters | 1 |
-| Recycle Bin deletes | 1 |
-| Job JSON + INI import | 1 |
-| ADS MD5 cache + fast folder compare | 1.5 |
-| Move/rename detection | 1.5 |
-| VSS locked files | 1.5 |
-| Hard links (multi-root) | 1.5 |
-| Two-way + sync DB | 2 |
-| Custom sync rules | 2 |
-| Versioning folder | 2 |
-| Batch / CLI | 2 |
-| RealTimeSync companion | 2 |
-| SFTP/FTPS | 3 |
+| Feature | Status |
+|---------|--------|
+| Mirror, Update, Automatic, Two-way | Shipped |
+| NTFS ADS compare and sync | Shipped |
+| Side-by-side compare grid | Shipped |
+| Gitignore-style filters | Shipped |
+| Recycle Bin deletes | Shipped |
+| Job JSON export/import | Shipped |
+| ADS hash cache + fast folder compare | Shipped |
+| Move/rename detection | Shipped |
+| Verify after copy | Shipped |
+| Archive-flag-only scan | Shipped |
+| Batch / CLI | Shipped |
+| Folder watch (RealTimeSync) | Shipped |
+| UNC ADS preflight | Shipped |
+| SFTP (primary stream only) | Partial |
+| VSS locked-file copy | Stub / hint |
+| Custom sync-rules editor | Schema only |
+| Size / date filter rules | Not shipped |
+| Email notifications | Out of scope |
+| Cloud providers | Out of scope |
+| macOS / Linux | Out of scope |
 
 ## UI surfaces
 
@@ -84,20 +79,20 @@
 |---------|---------|
 | **Jobs** | List/create/edit jobs and folder pairs |
 | **Compare** | Diff grid and filters |
-| **Run log** | History and export |
-| **Settings** | Theme, defaults, parallelism, delete policy |
+| **Filters** | Exclude / include rules |
+| **Log** | Run messages |
+| **Settings** | Updates folder, export/import |
 
 Details: [UI_DESIGN.md](UI_DESIGN.md).
 
-## Out of scope (v1)
+## Out of scope
 
 - Built-in cloud providers
-- macOS/Linux builds
-- Email notifications (FFS Donation Edition feature — consider Phase 2+)
+- macOS / Linux builds
+- Email notifications
 - Deduplication / Borg-style archives
 
 ## Success metrics
 
-- NTFS test corpus: 100% stream name/size match after mirror sync
-- Compare 100k-file tree on SSD: completes with parallel walk (target &lt; FFS baseline + 20% ADS overhead)
-- Zero dependency on MyFileExplorer codebase
+- NTFS test corpus: stream name/size match after mirror sync
+- Compare large trees on SSD with BackupMirror-style paired walk (ADS listing when `$DATA` size and time already match)

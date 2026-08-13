@@ -1,11 +1,18 @@
 import fs from 'node:fs/promises'
 import { buildStreamPath } from '@shared/ads/paths'
+import {
+  isFileHashCacheCurrent,
+  parseFileHashCache,
+  serializeFileHashCache,
+  type FileHashCache,
+} from '@shared/ads/hashCache'
 import { ioError, ok, type Result } from '@shared/result'
 
 /** BackupMirror text stream payload suffix. */
 const TEXT_STREAM_SUFFIX = '\0\r\n'
 
 export type FolderStats = Record<string, number>
+export type { FileHashCache }
 
 function parseNumericStreamText(raw: string): number | undefined {
   const trimmed = raw.replace(/\0/g, '').replace(/\r\n/g, '').trim()
@@ -15,11 +22,14 @@ function parseNumericStreamText(raw: string): number | undefined {
 }
 
 /**
- * Read a cached file hash from an ADS stream (e.g. `MD5`).
+ * Read a cached file hash from ADS. Returns undefined unless the payload includes
+ * size + mtime that still match the current $DATA (hash-only streams are ignored).
  */
 export async function readFileHashCache(
   hostPath: string,
   streamName: string,
+  size: number,
+  mtimeMs: number,
 ): Promise<Result<string | undefined>> {
   if (process.platform !== 'win32') {
     return ok(undefined)
@@ -28,20 +38,25 @@ export async function readFileHashCache(
   try {
     const streamPath = buildStreamPath(hostPath, streamName)
     const data = await fs.readFile(streamPath, 'utf8')
-    const hash = data.replace(/\0/g, '').replace(/\r\n/g, '').trim()
-    return ok(hash.length > 0 ? hash : undefined)
+    const parsed = parseFileHashCache(data)
+    if (!parsed || !isFileHashCacheCurrent(parsed, size, mtimeMs)) {
+      return ok(undefined)
+    }
+    return ok(parsed.hash)
   } catch {
     return ok(undefined)
   }
 }
 
 /**
- * Write a cached file hash to an ADS stream after hashing `$DATA`.
+ * Write hash + size + mtime, then restore host timestamps so the ADS write
+ * does not invalidate the cache on the next compare.
  */
 export async function writeFileHashCache(
   hostPath: string,
   streamName: string,
-  hash: string,
+  entry: FileHashCache,
+  atimeMs: number,
 ): Promise<Result<void>> {
   if (process.platform !== 'win32') {
     return ioError('ADS hash cache requires Windows.', 'Run on NTFS.')
@@ -49,7 +64,8 @@ export async function writeFileHashCache(
 
   try {
     const streamPath = buildStreamPath(hostPath, streamName)
-    await fs.writeFile(streamPath, `${hash}${TEXT_STREAM_SUFFIX}`, 'utf8')
+    await fs.writeFile(streamPath, `${serializeFileHashCache(entry)}${TEXT_STREAM_SUFFIX}`, 'utf8')
+    await fs.utimes(hostPath, new Date(atimeMs), new Date(entry.mtimeMs))
     return ok(undefined)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)

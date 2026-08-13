@@ -1,5 +1,6 @@
 import koffi from 'koffi'
 import { err, ioError, ok, type Result } from '@shared/result'
+import { withNativeLock } from './nativeLock'
 
 const FILE_ATTRIBUTE_READONLY = 0x00000001
 const FILE_ATTRIBUTE_ARCHIVE = 0x00000020
@@ -9,11 +10,7 @@ const GetFileAttributesW = kernel32.func('GetFileAttributesW', 'uint32', ['str16
 
 const INVALID_FILE_ATTRIBUTES = 0xffffffff
 
-export function getFileAttributes(hostPath: string): Result<number> {
-  if (process.platform !== 'win32') {
-    return ioError('File attributes are only available on Windows.')
-  }
-
+function readAttributesSync(hostPath: string): Result<number> {
   const attrs = GetFileAttributesW(hostPath)
   if (attrs === INVALID_FILE_ATTRIBUTES) {
     return ioError('Could not read file attributes.', hostPath)
@@ -21,14 +18,21 @@ export function getFileAttributes(hostPath: string): Result<number> {
   return ok(attrs)
 }
 
-export function isReadOnly(hostPath: string): boolean {
-  const attrs = getFileAttributes(hostPath)
+export async function getFileAttributes(hostPath: string): Promise<Result<number>> {
+  if (process.platform !== 'win32') {
+    return ioError('File attributes are only available on Windows.')
+  }
+  return withNativeLock(() => readAttributesSync(hostPath))
+}
+
+export async function isReadOnly(hostPath: string): Promise<boolean> {
+  const attrs = await getFileAttributes(hostPath)
   if (!attrs.ok) return false
   return (attrs.value & FILE_ATTRIBUTE_READONLY) !== 0
 }
 
-export function hasArchiveFlag(hostPath: string): boolean {
-  const attrs = getFileAttributes(hostPath)
+export async function hasArchiveFlag(hostPath: string): Promise<boolean> {
+  const attrs = await getFileAttributes(hostPath)
   if (!attrs.ok) return false
   return (attrs.value & FILE_ATTRIBUTE_ARCHIVE) !== 0
 }

@@ -26,7 +26,7 @@ export async function copyStreams(
     return ioError('Alternate data stream copy requires Windows.', 'Run on NTFS.')
   }
 
-  const listResult = listStreams(sourcePath)
+  const listResult = await listStreams(sourcePath)
   if (!listResult.ok) {
     return listResult
   }
@@ -48,7 +48,7 @@ export async function copyStreams(
       copiedStreams.push(entry.name)
     }
 
-    const verifyResult = listStreams(destPath)
+    const verifyResult = await listStreams(destPath)
     if (!verifyResult.ok) {
       return verifyResult
     }

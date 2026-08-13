@@ -1,6 +1,6 @@
 # NTFS Alternate Data Stream sync
 
-**Status:** Specification for Phase 1 engine. MyFileSync’s primary differentiator.
+MyFileSync’s primary differentiator: compare and copy **NTFS Alternate Data Streams**, not just `$DATA`.
 
 ## Concepts
 
@@ -12,7 +12,7 @@ Examples users care about:
 |--------|-----------------|
 | `Zone.Identifier` | Mark-of-the-web |
 | `parameters` | A1111 / Forge generation text (often in PNG tEXt on other platforms; ADS on some workflows) |
-| `VER_1`…`VER_4` | Image edit history (MyFileExplorer pattern) |
+| `VER_1`…`VER_4` | Image edit history (named streams) |
 | `FileCount`, `TotalSize`, … | Folder statistics caches |
 | `MD5` | BackupMirror compare cache |
 
@@ -37,11 +37,11 @@ type AdsManifest = AdsManifestEntry[]  // sorted by name, excludes ::$DATA
 
 ## Win32 implementation (main process)
 
-Reimplement (do not import) patterns equivalent to Trinet.Core.IO.Ntfs / MyFileExplorer `adsWin32.ts`:
+Win32 listing and copy (koffi + stream paths):
 
 | Operation | Mechanism |
 |-----------|-----------|
-| List | `CreateFileW` + `FILE_FLAG_BACKUP_SEMANTICS` + `BackupRead` / `BackupSeek` |
+| List | `FindFirstStreamW` / `FindNextStreamW` |
 | Exists | `GetFileAttributesW` on `path:streamName:$DATA` |
 | Read/write/delete | Node `fs` on stream path or `DeleteFileW` |
 | Path form | `buildStreamPath(base, name)` → `\\?\` prefix when long |
@@ -55,7 +55,7 @@ When reading/writing text streams matching legacy ADS.cs / BackupMirror:
 - Read: UTF-8, trim trailing CR/LF/NUL, cut at first NUL.
 - Write: `value + '\0\r\n'` payload for text streams (matches BackupMirror Save).
 
-Binary streams: raw bytes over `readBytes`/`writeBytes` IPC for manager UI (Phase 1.5+).
+Binary streams: raw bytes over `readBytes`/`writeBytes` IPC for the stream preview UI.
 
 ### Host timestamp preservation
 
@@ -79,17 +79,17 @@ Fast compare (optional, BackupMirror):
 
 Optional compare cache (job `ads.writeCacheToAds`):
 
-- After hashing `$DATA`, write `MD5` stream on source (BackupMirror behavior).
-- Next compare: skip re-hash if size/time unchanged and cached MD5 present.
+- After hashing `$DATA`, write `MD5` stream as `v1|{hash}|{size}|{mtimeMs}` and restore host timestamps.
+- Next compare: skip re-hash **only** if cached size and mtime still match `$DATA`. Hash-only (legacy) streams are ignored.
 
 ## Copy matrix
 
 | Source → Dest | Primary `$DATA` | Alternate streams | Notes |
 |---------------|-----------------|-------------------|-------|
 | **NTFS → NTFS** | `CopyFileEx` / `CopyFileW` | Included in kernel copy OR explicit `copyStreams` fallback | **Default path — full fidelity** |
-| **NTFS → FAT/exFAT** | Copy file body | **Dropped** (warn) or sidecar policy (Phase 3 doc) | Job setting `ads.nonNtfsPolicy` |
+| **NTFS → FAT/exFAT** | Copy file body | **Dropped** (warn); sidecar policy is designed, not shipped | Job setting `ads.nonNtfsPolicy` |
 | **NTFS → SMB UNC** | Same as NTFS if probe succeeds | Best-effort; preflight test write | EPERM → user message |
-| **SFTP (Phase 3)** | Upload `$DATA` only | **Not supported** | Document in job UI |
+| **SFTP** | Upload `$DATA` only | **Not supported** | Document in job UI |
 
 ### NTFS → NTFS algorithm
 

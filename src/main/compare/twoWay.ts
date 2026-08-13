@@ -13,7 +13,7 @@ import type {
   SyncDirection,
 } from '@shared/schemas/compare'
 import type { JobFile } from '@shared/schemas/job'
-import type { ComparePairInput } from './merge'
+import { unionSortedRelPaths, type ComparePairInput } from './merge'
 import type { FileState, PairFileStates } from '../db/syncState'
 
 function normalizeRelPath(relPath: string): string {
@@ -228,13 +228,8 @@ export function mergePairRowsTwoWay(
   job: JobFile,
   pairStates: PairFileStates,
 ): CompareRow[] {
-  const relPaths = new Set<string>([
-    ...input.leftRecords.keys(),
-    ...input.rightRecords.keys(),
-  ])
-
   const rows: CompareRow[] = []
-  for (const relPath of [...relPaths].sort()) {
+  for (const relPath of unionSortedRelPaths(input.leftRecords, input.rightRecords)) {
     const left = input.leftRecords.get(relPath)
     const right = input.rightRecords.get(relPath)
     const prev = pairStates.get(relPath)

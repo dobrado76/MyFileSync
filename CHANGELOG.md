@@ -4,22 +4,23 @@ All notable changes to MyFileSync are documented here.
 
 ## [Unreleased]
 
-Work in progress — not released. Version stays at **0.1.0** until you cut a release.
+Work since **0.1.0** (not a new tagged release yet).
 
-### Added (since 0.1.0)
+### Added
 
-- **Phase 1 MVP:** Jobs, compare engine, sync engine, compare grid, INI import, run log.
-- **Phase 1.5:** ADS MD5 cache, fast folder compare, move/rename detection, verify-after-copy, archive-flag scan, hard links, VSS hint.
-- **Phase 2:** Two-way sync (sync DB), versioning, batch JSON, headless CLI, RealTimeSync watch.
-- **Phase 3 (partial):** UNC ADS preflight, SFTP provider stub.
-- **UI:** Tabbed job editor, row detail + ADS stream preview, settings export/import.
-- **CI:** GitHub Actions `npm run check` on windows-latest.
+- Jobs, compare engine, sync engine, compare grid, run log.
+- ADS hash cache, fast folder compare, move/rename detection, verify-after-copy, archive-flag scan, hard links.
+- Two-way sync (sync DB), versioning, batch JSON, headless CLI, folder watch.
+- UNC ADS preflight, SFTP provider (primary stream only).
+- Filter manager (gitignore-style patterns and relative paths).
+- Custom app icon; compare status shows live item count and elapsed time.
+- Settings modal, window restore, job toolbar.
 
 ## [0.1.0] — 2026-08-13
 
-### Added — Phase 0
+### Added
 
-- Initial release: Electron shell, ADS list/copy spike, settings, local update workflow.
+- Initial release: Electron shell, ADS list/copy, settings, local update workflow.
 - `npm run dist` → NSIS installer.
 
 [0.1.0]: https://github.com/your-org/myfilesync/releases/tag/v0.1.0

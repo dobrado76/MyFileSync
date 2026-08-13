@@ -1,38 +1,39 @@
-# Documentation index
+# Documentation
 
-Read in this order when starting implementation.
+Product and technical docs for **MyFileSync**.
 
 ## Product
 
-| Doc | Read when |
-|-----|-----------|
-| [PRODUCT_SPEC.md](PRODUCT_SPEC.md) | Defining user-visible behavior and acceptance tests |
-| [DECISIONS.md](DECISIONS.md) | Locking architecture or UX choices |
-| [FREEFILESYNC_PARITY.md](FREEFILESYNC_PARITY.md) | Prioritizing vs FreeFileSync 14.x |
-| [BACKUPMIRROR_MIGRATION.md](BACKUPMIRROR_MIGRATION.md) | Porting legacy DoubleChecker jobs |
+| Doc | Contents |
+|-----|----------|
+| [PRODUCT_SPEC.md](PRODUCT_SPEC.md) | User-visible behavior |
+| [DECISIONS.md](DECISIONS.md) | Locked architecture and UX choices |
+| [FREEFILESYNC_PARITY.md](FREEFILESYNC_PARITY.md) | Feature comparison vs FreeFileSync |
+| [UI_DESIGN.md](UI_DESIGN.md) | Compare grid and chrome |
 
 ## Engine
 
-| Doc | Read when |
-|-----|-----------|
+| Doc | Contents |
+|-----|----------|
 | [ADS_SYNC.md](ADS_SYNC.md) | NTFS streams — compare, copy, filters |
-| [COMPARE_AND_SYNC.md](COMPARE_AND_SYNC.md) | Modes, DB, algorithms, actions |
-| [PROJECT_FORMAT.md](PROJECT_FORMAT.md) | Job JSON schema and userData layout |
+| [COMPARE_AND_SYNC.md](COMPARE_AND_SYNC.md) | Variants, classify, sync actions |
+| [PROJECT_FORMAT.md](PROJECT_FORMAT.md) | Job JSON and userData layout |
 
-## Implementation
+## App internals
 
-| Doc | Read when |
-|-----|-----------|
-| [ARCHITECTURE.md](ARCHITECTURE.md) | Main/renderer split and modules |
+| Doc | Contents |
+|-----|----------|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Main / renderer split |
 | [IPC_CONTRACT.md](IPC_CONTRACT.md) | Typed preload API |
-| [UI_DESIGN.md](UI_DESIGN.md) | Compare grid and chrome |
-| [SECURITY.md](SECURITY.md) | Path validation and deletes |
+| [SECURITY.md](SECURITY.md) | Path validation and delete safety |
 | [BUILD.md](BUILD.md) | Dev build and Windows installer |
-| [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) | Phased delivery checklist |
+| [TESTING.md](TESTING.md) | Automated and NTFS fixture tests |
+| [BACKUPMIRROR_MIGRATION.md](BACKUPMIRROR_MIGRATION.md) | Legacy INI field mapping (not in the UI) |
 
-## Parent
+## Also
 
 | Doc | Location |
 |-----|----------|
-| Plan | [../PLAN.md](../PLAN.md) |
 | README | [../README.md](../README.md) |
+| Overview | [../PLAN.md](../PLAN.md) |
+| Changelog | [../CHANGELOG.md](../CHANGELOG.md) |

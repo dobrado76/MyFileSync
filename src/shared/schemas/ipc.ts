@@ -93,6 +93,7 @@ export const jobImportPathRequestSchema = z.object({ path: z.string().min(1) })
 
 export const compareRunRequestSchema = z.object({
   jobId: z.string().uuid(),
+  runId: z.string().uuid().optional(),
 })
 
 export const compareGetRowsRequestSchema = z.object({
@@ -104,7 +105,7 @@ export const compareGetRowsRequestSchema = z.object({
     .optional(),
 })
 
-export const compareCancelRequestSchema = z.object({ runId: z.string().uuid() })
+export const compareCancelRequestSchema = z.object({ runId: z.string().uuid().optional() })
 
 export const compareSetRowIncludedRequestSchema = z.object({
   runId: z.string().uuid(),

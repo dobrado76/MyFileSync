@@ -186,7 +186,10 @@ export function registerIpc(appVersion: string): void {
     if (saved.value.watch.enabled) await startWatch(saved.value.id)
     return ok({ id: saved.value.id })
   })
-  handle(IPC_CHANNELS.JOB_DELETE, jobIdRequestSchema, async (req) => deleteJob(req.id))
+  handle(IPC_CHANNELS.JOB_DELETE, jobIdRequestSchema, async (req) => {
+    await stopWatch(req.id)
+    return deleteJob(req.id)
+  })
   handle(IPC_CHANNELS.JOB_IMPORT_JSON, jobImportPathRequestSchema, async (req) => {
     const result = await importJobJson(requireAbsolute(req.path))
     if (!result.ok) return result
@@ -201,10 +204,15 @@ export function registerIpc(appVersion: string): void {
   })
 
   handle(IPC_CHANNELS.COMPARE_RUN, compareRunRequestSchema, async (req) => {
-    const runId = crypto.randomUUID()
+    const runId = req.runId ?? crypto.randomUUID()
     try {
       const run = await runCompare(runId, req.jobId, (event) => emitEvent(event))
-      return ok({ runId, rowCount: run.rows.length, stats: run.stats })
+      return ok({
+        runId,
+        rowCount: run.stats.total,
+        stats: run.stats,
+        cancelled: run.cancelled,
+      })
     } catch (error) {
       return validationError(error instanceof Error ? error.message : String(error))
     }
@@ -243,9 +251,9 @@ export function registerIpc(appVersion: string): void {
     return ok(run.progress)
   })
 
-  handle(IPC_CHANNELS.ADS_LIST, adsListRequestSchema, (req) => {
+  handle(IPC_CHANNELS.ADS_LIST, adsListRequestSchema, async (req) => {
     const filePath = requireAbsolute(req.path)
-    const result = listStreams(filePath)
+    const result = await listStreams(filePath)
     if (!result.ok) return result
     return ok({ path: filePath, manifest: result.value })
   })

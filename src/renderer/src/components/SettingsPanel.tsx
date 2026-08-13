@@ -18,15 +18,14 @@ export function SettingsPanel({
   onImportSettings,
 }: SettingsPanelProps) {
   return (
-    <section className="settings-panel">
-      <h2 className="settings-title">Settings</h2>
-
+    <>
       <div className="settings-field">
         <label className="settings-label" htmlFor="updates-folder">
           Updates folder
         </label>
         <p className="settings-hint">
-          Folder scanned for <code>MyFileSync-Setup-*.exe</code> installers.
+          Optional folder where you keep <code>MyFileSync-Setup-*.exe</code> installers. Updates are
+          checked only when you click <strong>Check for updates</strong> below.
         </p>
         <div className="settings-row">
           <input
@@ -39,12 +38,7 @@ export function SettingsPanel({
           <button type="button" className="button" disabled={busy} onClick={onBrowseUpdatesFolder}>
             Browse…
           </button>
-          <button
-            type="button"
-            className="button"
-            disabled={busy || !updatesFolder}
-            onClick={onCheckForUpdates}
-          >
+          <button type="button" className="button" disabled={busy} onClick={onCheckForUpdates}>
             Check for updates
           </button>
         </div>
@@ -52,7 +46,8 @@ export function SettingsPanel({
       </div>
 
       <div className="settings-field">
-        <span className="settings-label">App settings</span>
+        <span className="settings-label">Backup / restore</span>
+        <p className="settings-hint">Export or import app settings (updates folder path).</p>
         <div className="settings-row">
           <button type="button" className="button" disabled={busy} onClick={onExportSettings}>
             Export settings…
@@ -62,6 +57,6 @@ export function SettingsPanel({
           </button>
         </div>
       </div>
-    </section>
+    </>
   )
 }

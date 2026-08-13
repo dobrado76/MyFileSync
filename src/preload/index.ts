@@ -37,7 +37,7 @@ const api: MyFileSyncApi = {
     limit: number
     filter?: CompareFilter
   }) => invoke(IPC_CHANNELS.COMPARE_GET_ROWS, req),
-  compareCancel: (req) => invoke(IPC_CHANNELS.COMPARE_CANCEL, req),
+  compareCancel: (req) => invoke(IPC_CHANNELS.COMPARE_CANCEL, req ?? {}),
   compareSetRowIncluded: (req) => invoke(IPC_CHANNELS.COMPARE_SET_ROW_INCLUDED, req),
   syncRun: (req) => invoke(IPC_CHANNELS.SYNC_RUN, req),
   syncCancel: (req) => invoke(IPC_CHANNELS.SYNC_CANCEL, req),

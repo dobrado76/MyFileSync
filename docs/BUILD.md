@@ -1,7 +1,6 @@
 # Build and release
 
-**Status:** Phase 0 — local Windows installer via `npm run dist`.
-
+Local Windows installer via `npm run dist`.
 ## Prerequisites
 
 - Node.js LTS (20+)
@@ -38,15 +37,12 @@ Example for v0.1: `release/MyFileSync-Setup-0.1.0.exe`
 
 1. Build a new installer with `npm run dist`.
 2. In MyFileSync **Settings**, set **Updates folder** to your `release` directory (or any folder where you copy installers).
-3. On startup (or **Check for updates**), the app scans for `MyFileSync-Setup-*.exe` and compares semver from the filename.
+3. Click **Check for updates** in Settings when you want to scan for `MyFileSync-Setup-*.exe` and compare semver from the filename.
 4. When a newer version exists, an **Install update** banner runs the setup and quits the app.
 
-## CI (planned)
+## CI
 
-- GitHub Actions on `windows-latest`
-- `npm run check`
-- Tag push → `npm run dist`, attach installer to Release
-
+GitHub Actions on `windows-latest` runs `npm run check`. Tag-push installer attach is optional.
 ## Versioning
 
 Semantic versioning in `package.json`. Display uses short form where patch is zero (for example `0.1.0` → **v0.1**). Job schema `version` field is independent of app semver.

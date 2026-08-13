@@ -111,7 +111,7 @@ export type CompareRun = {
   runId: string
   jobId: string
   job: JobFile
-  rows: CompareRow[]
+  extraEqual: number
   stats: CompareStats
   cancelled: boolean
   createdAt: number

@@ -11,7 +11,7 @@ userData/
     {uuid}.json                 # Job definitions
     index.json                  # Optional job ordering / last-open
   sync-jobs/
-    {jobId}.db                  # SQLite sync state (Phase 2+)
+    {jobId}.db                  # SQLite sync state (two-way)
   logs/
     {timestamp}-{jobId}.jsonl   # Run logs (optional retention setting)
   window-state.json             # Main window geometry (excluded from settings export)
@@ -78,13 +78,13 @@ userData/
 
 | Field | Values | Notes |
 |-------|--------|-------|
-| `variant` | `mirror` \| `update` \| `twoWay` \| `automatic` | `twoWay` requires sync DB (Phase 2) |
+| `variant` | `mirror` \| `update` \| `twoWay` \| `automatic` | `twoWay` uses the sync DB |
 | `compare.method` | `sizeAndTime` \| `content` | Content uses `contentHash` |
 | `compare.contentHash` | `md5` \| `sha256` \| `none` | |
 | `ads.syncAllStreams` | boolean | Default true NTFS→NTFS |
 | `ads.writeCacheToAds` | boolean | BackupMirror-style MD5/folder stats on files |
-| `filters.include` | glob[] | Empty = all (then exclude applied) |
-| `filters.exclude` | glob[] | Wildcards supported (Phase 1) |
+| `filters.include` | glob[] | Empty = all (then exclude applied). Gitignore-style, relative to each pair root. |
+| `filters.exclude` | glob[] | `!Thumbnails` any depth; `/!Thumbnails` or `dir/name` this instance only. |
 
 ## Settings schema (`settings.json`)
 
@@ -97,11 +97,9 @@ userData/
 | `logRetentionDays` | number | 30 |
 | `lastJobId` | string \| null | null |
 
-Export/import settings strips `window-state.json` (D15 pattern from MyFileExplorer).
+Export/import settings strips `window-state.json`.
 
-## SQLite sync DB (Phase 2)
-
-Table sketch — finalize in implementation:
+## SQLite sync DB
 
 | Table | Purpose |
 |-------|---------|
@@ -111,7 +109,7 @@ Table sketch — finalize in implementation:
 
 ## BackupMirror INI mapping
 
-See [BACKUPMIRROR_MIGRATION.md](BACKUPMIRROR_MIGRATION.md).
+Field mapping for old `optionsBackup.ini` files: [BACKUPMIRROR_MIGRATION.md](BACKUPMIRROR_MIGRATION.md). Not exposed in the UI.
 
 ## Versioning
 

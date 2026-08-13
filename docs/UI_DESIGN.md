@@ -2,41 +2,35 @@
 
 FreeFileSync-inspired **compare-first** layout with modern Electron chrome (dark/light).
 
+The workbench uses a **header toolbar** (job picker, paths, Compare / Sync / Cancel) and tabs: **Options | Compare | Filters | Log**. Settings live in a header modal, not on the main surface.
+
 ## Layout
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ Menu: File  Job  Compare  Sync  View  Help                  │
-├──────────┬──────────────────────────────────────────────────┤
-│ Jobs     │  [Compare ▼] [Filter: diffs only ▼]  [▶ Sync]   │
-│ rail     ├──────────────────────────────────────────────────┤
-│          │  Path          │ Left size/time │ Right │ Action │ ADS │
-│ ▣ Dev    │  src/foo.txt   │ 1.2 MB  …      │ …     │ →     │ =   │
-│ ▣ Photos │  src/bar/      │ …              │ …     │ ⊕     │ +1  │
-│          ├──────────────────────────────────────────────────┤
-│ + New    │  Detail / stream preview (collapsible bottom)    │
-├──────────┴──────────────────────────────────────────────────┤
-│ Status: 1,234 compared · 56 to sync · ▓▓▓░░ 45%  [Cancel]  │
+│ MyFileSync          [Settings]                              │
+├─────────────────────────────────────────────────────────────┤
+│ Job ▾  Name  [+ New] [Save]   Source …   Target …           │
+│ [Compare] [Sync] [Cancel]     Options | Compare | Filters | Log │
+├─────────────────────────────────────────────────────────────┤
+│ ☑  Path              Left            Right         Action ADS │
+│    src/foo.txt       1.2 MB  …       …             →      =   │
+│    src/bar/          …               …             ⊕      +1  │
+├─────────────────────────────────────────────────────────────┤
+│ Comparing… 12,450 items · path                      1:05    │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ## Regions
 
-### Jobs rail (left, ~240px resizable)
+### Jobs (toolbar)
 
-- List of saved jobs with enable checkbox per job (for batch Phase 2).
-- Last run: icon ✓ / ⚠ / ✗ + timestamp.
-- **+ New job** → editor drawer.
-- Context menu: Duplicate, Export JSON, Delete, Import INI.
+- Job dropdown, name field, + New, Save, Delete.
+- Source / target path fields with browse; pair add/remove/flip.
 
-### Job editor (drawer / modal)
+### Options tab
 
-Tabs: **Pairs** | **Variant** | **Compare** | **ADS** | **Filters** | **Advanced**
-
-- Pairs: table left/right paths, browse buttons, enabled, remove.
-- Variant: radio Mirror / Update / Automatic / Two-way (disabled until Phase 2).
-- ADS: sync all streams, exclude list, write cache to ADS checkbox.
-- Advanced: VSS, verify, parallelism sliders.
+Compare method, ADS cache, Recycle Bin, workers, watch, variant. Filters have their own tab (pattern vs this path).
 
 ### Compare grid (center)
 
@@ -45,7 +39,7 @@ Virtualized table (`@tanstack/react-virtual` or equivalent).
 | Column | Content |
 |--------|---------|
 | ☑ | Include in sync |
-| Relative path | Tree indent optional Phase 1.5 |
+| Relative path | Relative to pair root |
 | Left | Size, date |
 | Right | Size, date |
 | Action | Icon + label (Create, Update, Delete, …) |
@@ -90,11 +84,10 @@ Double-click row → modal **Action detail** (BackupMirror `ShowAction` revival)
 | Compare | F5 | Run compare for active job |
 | Sync | Ctrl+S | Execute included actions (confirm if deletes &gt; 0) |
 | Cancel | Esc | Abort long compare/sync |
-| Pause | — | Phase 2 |
 
 ## Progress / status bar
 
-- Left: phase label (`Comparing…`, `Copying…`, `Listing ADS…`).
+- Left: `Comparing… N items · path` (live count) plus elapsed time.
 - Center: `done / total` files + throughput.
 - Right: ETA + Cancel.
 
@@ -117,7 +110,7 @@ Default **system** theme; persist in `settings.json`.
 - Keyboard: arrow keys in grid, Space toggle include, Enter open detail.
 - High-contrast friendly row colors (not color-only — action column has text).
 
-## Non-goals (UI v1)
+## Non-goals (UI)
 
 - Side-by-side dual tree browsable panes (FFS has folder pickers — we use path fields + OS browse dialog).
 - Ribbon UI.

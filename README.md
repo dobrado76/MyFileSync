@@ -1,41 +1,46 @@
 # MyFileSync
 
-Windows-first **folder synchronization and backup** built with **Electron + React**. The headline capability is **faithful NTFS Alternate Data Stream (ADS) replication** — something [FreeFileSync](https://freefilesync.org/) does not offer and your legacy **BackupMirror** (DoubleChecker) pioneered in C#.
+Windows folder **sync and backup** with **NTFS Alternate Data Stream (ADS)** fidelity.
 
-## Why this exists
+Most sync tools copy the file body only. Alternate streams — Mark-of-the-Web, generation parameters, folder stats, compare caches — are dropped. MyFileSync compares and copies them on NTFS→NTFS, then shows stream diffs in the compare grid.
 
-- **FreeFileSync** is excellent for mirror/update/two-way sync, scheduling, and parallel I/O — but copies the primary file body only; alternate streams are lost on many copy paths.
-- **BackupMirror** (2013 WinForms) already compared and synced ADS, cached MD5 in streams, detected moves by stream manifests, and used VSS for locked files — but lacks a modern UI, CLI, scheduler, and wildcard filters.
-- **MyFileSync** combines FFS-style review UX with BackupMirror-grade ADS fidelity in a maintainable Electron codebase.
+## What it does
 
-## Status
+- **Jobs** with one or more folder pairs (source / target)
+- **Variants:** Mirror, Update, Automatic, Two-way
+- **Compare** by size + date/time, or MD5 / SHA-256 content hash
+- **ADS manifests** always listed and compared (name + size), even when `$DATA` matches
+- **Filters** — gitignore-style patterns (`!Thumbnails`, `*.tmp`) or a single relative path
+- **Sync** with Recycle Bin deletes (default), confirm when mirror would delete
+- **CLI** unattended run and folder watch (RealTimeSync)
 
-**Phase 1** — Compare, sync, jobs, INI import. Run `npm install && npm run dev`. Build with `npm run dist`.
+## Run
 
-## Reading order
+```powershell
+npm install
+npm run dev
+```
 
-| Doc | Purpose |
-|-----|---------|
-| [PLAN.md](PLAN.md) | Canonical project plan |
-| [docs/README.md](docs/README.md) | Full doc index |
-| [docs/PRODUCT_SPEC.md](docs/PRODUCT_SPEC.md) | What the product must do |
-| [docs/DECISIONS.md](docs/DECISIONS.md) | Locked decisions (D1–D7) |
-| [docs/ADS_SYNC.md](docs/ADS_SYNC.md) | NTFS stream model and copy matrix |
-| [docs/COMPARE_AND_SYNC.md](docs/COMPARE_AND_SYNC.md) | Engine: modes, DB, algorithms |
-| [docs/FREEFILESYNC_PARITY.md](docs/FREEFILESYNC_PARITY.md) | Feature checklist vs FFS 14.x |
-| [docs/BACKUPMIRROR_MIGRATION.md](docs/BACKUPMIRROR_MIGRATION.md) | Legacy INI → JSON import |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Process model and modules |
+Build the Windows installer:
+
+```powershell
+npm run dist
+```
+
+Requires Node.js LTS and Windows 10/11 x64. Details: [docs/BUILD.md](docs/BUILD.md).
+
+## Documentation
+
+| Doc | Contents |
+|-----|----------|
+| [docs/README.md](docs/README.md) | Full index |
+| [docs/PRODUCT_SPEC.md](docs/PRODUCT_SPEC.md) | Product behavior |
+| [docs/ADS_SYNC.md](docs/ADS_SYNC.md) | NTFS streams — compare and copy |
+| [docs/COMPARE_AND_SYNC.md](docs/COMPARE_AND_SYNC.md) | Engine: variants, classify, sync |
+| [docs/PROJECT_FORMAT.md](docs/PROJECT_FORMAT.md) | Job JSON and `userData` layout |
 | [docs/UI_DESIGN.md](docs/UI_DESIGN.md) | Compare grid and chrome |
-| [docs/IPC_CONTRACT.md](docs/IPC_CONTRACT.md) | Main ↔ renderer API |
-| [docs/PROJECT_FORMAT.md](docs/PROJECT_FORMAT.md) | Job JSON + userData layout |
-| [docs/SECURITY.md](docs/SECURITY.md) | Path guards and delete safety |
-| [docs/BUILD.md](docs/BUILD.md) | Build and release (future) |
-| [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) | Phased delivery |
-
-## Independence
-
-This repository is **standalone**. It must not import, copy from, or depend on [MyFileExplorer](F:\Sites\MyFileExplorer) or any other project. Conceptual patterns from BackupMirror and MyFileExplorer ADS work may be **reimplemented** here.
+| [docs/BUILD.md](docs/BUILD.md) | Dev build and NSIS installer |
 
 ## License
 
-TBD at first code commit (recommend MIT to match sibling tools).
+MIT

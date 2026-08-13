@@ -33,7 +33,7 @@ export async function copyEntry(
       return ok(undefined)
     }
 
-    if (process.platform === 'win32' && isReadOnly(dest)) {
+    if (process.platform === 'win32' && (await isReadOnly(dest))) {
       return readOnlyWriteError(dest)
     }
 
@@ -90,7 +90,7 @@ export async function copyStreamsOnly(action: PlannedAction): Promise<Result<voi
     return ioError('Stream update is missing source or destination path.')
   }
 
-  if (process.platform === 'win32' && isReadOnly(action.destPath)) {
+  if (process.platform === 'win32' && (await isReadOnly(action.destPath))) {
     return readOnlyWriteError(action.destPath)
   }
 

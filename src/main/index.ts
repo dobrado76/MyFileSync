@@ -3,8 +3,22 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { registerIpc } from './ipc/register'
 import { parseCliArgs, runCli } from './cli/runner'
+import {
+  applyWindowState,
+  DEFAULT_WINDOW_STATE,
+  loadWindowState,
+  saveWindowState,
+} from './settings/windowState'
 
 const isDev = !app.isPackaged
+
+app.setAppUserModelId('com.myfilesync.app')
+
+function appIconPath(): string | undefined {
+  const ico = join(__dirname, '../../build/icon.ico')
+  if (existsSync(ico)) return ico
+  return undefined
+}
 
 function isHeadlessCli(): boolean {
   const args = parseCliArgs(process.argv)
@@ -19,15 +33,21 @@ function preloadPath(): string {
   return js
 }
 
-function createWindow(): void {
-  const mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
+async function createWindow(): Promise<void> {
+  const saved = await loadWindowState()
+  const initial = saved ?? DEFAULT_WINDOW_STATE
+
+  const window = new BrowserWindow({
+    x: saved ? initial.x : undefined,
+    y: saved ? initial.y : undefined,
+    width: initial.width,
+    height: initial.height,
     minWidth: 800,
     minHeight: 600,
     show: false,
     autoHideMenuBar: true,
     title: 'MyFileSync',
+    icon: appIconPath(),
     webPreferences: {
       preload: preloadPath(),
       sandbox: false,
@@ -36,19 +56,29 @@ function createWindow(): void {
     },
   })
 
-  mainWindow.on('ready-to-show', () => {
-    mainWindow.show()
+  if (!saved) {
+    window.center()
+  } else {
+    applyWindowState(window, initial)
+  }
+
+  window.on('ready-to-show', () => {
+    window.show()
   })
 
-  mainWindow.webContents.setWindowOpenHandler((details) => {
+  window.on('close', () => {
+    void saveWindowState(window)
+  })
+
+  window.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
     return { action: 'deny' }
   })
 
   if (isDev && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    await window.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    await window.loadFile(join(__dirname, '../renderer/index.html'))
   }
 }
 
@@ -61,11 +91,11 @@ app.whenReady().then(async () => {
   }
 
   registerIpc(app.getVersion())
-  createWindow()
+  await createWindow()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow()
+      void createWindow()
     }
   })
 })

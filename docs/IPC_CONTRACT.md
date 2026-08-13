@@ -16,7 +16,7 @@ type ErrCode = 'validation' | 'not-found' | 'io' | 'busy' | 'not-allowed' | 'can
 
 Prefix: `sync:` for engine, `job:` for jobs, `app:` for shell.
 
-## API surface (v1 sketch)
+## API surface
 
 ### App
 
@@ -90,7 +90,7 @@ src/shared/
 
 ## Validation
 
-- Main: `handle(channel, schema, fn)` pattern (same as MyFileExplorer).
+- Main: Zod-validated `handle(channel, schema, fn)` pattern.
 - Invalid payload → `{ ok: false, error: { code: 'validation', … } }`.
 
 ## Security
@@ -98,10 +98,7 @@ src/shared/
 - All paths in requests → `requireAbsolute` in main.
 - Job import paths user-selected via dialog only.
 
-## Phase 2 additions
-
-- `batch:run` — CLI-equivalent unattended job
-- `watch:start` / `watch:stop` — RealTimeSync companion
+Also on the API: `batch:run` (CLI-equivalent unattended job) and folder watch start/stop.
 
 ## Related
 

@@ -1,21 +1,12 @@
 import type { CompareFilter, CompareRow } from '@shared/schemas/compare'
 
-function formatSize(size: number): string {
-  if (size < 1024) return `${size} B`
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`
-}
-
-function formatDate(ms: number): string {
-  return new Date(ms).toLocaleString()
-}
-
-function adsBadge(row: CompareRow): string {
-  if (row.adsDelta.equal) return '='
-  const delta = row.adsDelta.added - row.adsDelta.removed
-  if (delta > 0) return `+${row.adsDelta.added}`
-  if (delta < 0) return `-${row.adsDelta.removed}`
-  return '≠'
+function adsHint(row: CompareRow): string {
+  if (row.adsDelta.equal) return ''
+  const parts: string[] = []
+  if (row.adsDelta.added) parts.push(`+${row.adsDelta.added} ADS`)
+  if (row.adsDelta.removed) parts.push(`-${row.adsDelta.removed} ADS`)
+  if (row.adsDelta.changed) parts.push(`${row.adsDelta.changed} ADS≠`)
+  return parts.join(' ')
 }
 
 function rowClass(row: CompareRow): string {
@@ -42,98 +33,117 @@ type CompareGridProps = {
   filter: CompareFilter
   busy: boolean
   onFilterChange: (filter: CompareFilter) => void
-  onCompare: () => void
-  onSync: () => void
   onToggleIncluded: (rowId: string, included: boolean) => void
   onSelectRow: (row: CompareRow) => void
+  onRowDoubleClick: (row: CompareRow) => void
   selectedRowId: string | null
 }
 
-const FILTERS: CompareFilter[] = ['all', 'differences', 'leftOnly', 'rightOnly', 'adsDiff']
+const FILTER_OPTIONS: Array<{ id: CompareFilter; label: string; tooltip: string }> = [
+  {
+    id: 'all',
+    label: 'All',
+    tooltip: 'Show every compared item, including files and folders that already match.',
+  },
+  {
+    id: 'differences',
+    label: 'Differences',
+    tooltip: 'Show only items that differ between source and target — anything that would create, update, delete, or move on sync.',
+  },
+  {
+    id: 'leftOnly',
+    label: '← Source only',
+    tooltip: 'Show items that exist in the source folder but not on the target (new on source).',
+  },
+  {
+    id: 'rightOnly',
+    label: 'Target only →',
+    tooltip: 'Show items that exist on the target but not in the source. In mirror mode these are usually deleted on sync.',
+  },
+  {
+    id: 'adsDiff',
+    label: 'ADS ≠',
+    tooltip: 'Show items where the main file matches but NTFS alternate data streams differ (MyFileSync specialty).',
+  },
+]
 
 export function CompareGrid({
   rows,
   filter,
   busy,
   onFilterChange,
-  onCompare,
-  onSync,
   onToggleIncluded,
   onSelectRow,
+  onRowDoubleClick,
   selectedRowId,
 }: CompareGridProps) {
   return (
     <section className="compare-panel">
-      <div className="compare-toolbar">
-        <button type="button" className="button button-primary" disabled={busy} onClick={onCompare}>
-          Compare
-        </button>
-        <button type="button" className="button button-primary" disabled={busy} onClick={onSync}>
-          Sync
-        </button>
-        <div className="filter-group">
-          {FILTERS.map((f) => (
+      <div className="compare-filter-bar">
+        <span className="compare-filter-label">Show</span>
+        <div className="filter-toggle-group" role="group" aria-label="Compare result filters">
+          {FILTER_OPTIONS.map((option) => (
             <button
-              key={f}
+              key={option.id}
               type="button"
-              className={`button ${filter === f ? 'button-active' : ''}`}
-              onClick={() => onFilterChange(f)}
+              className={`filter-toggle ${filter === option.id ? 'filter-toggle-active' : ''}`}
+              disabled={busy}
+              title={option.tooltip}
+              aria-label={option.tooltip}
+              aria-pressed={filter === option.id}
+              onClick={() => onFilterChange(option.id)}
             >
-              {f}
+              {option.label}
             </button>
           ))}
         </div>
       </div>
 
       <div className="compare-grid-wrap">
-        <table className="compare-grid">
+        <table className="compare-grid compare-grid-bm">
           <thead>
             <tr>
-              <th>☑</th>
-              <th>Path</th>
-              <th>Left</th>
-              <th>Right</th>
-              <th>Action</th>
-              <th>ADS</th>
+              <th className="col-check">☑</th>
+              <th className="col-source">Source</th>
+              <th className="col-action">Action</th>
+              <th className="col-target">Target</th>
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={6} className="empty-row">
-                  Run Compare to see differences.
+                <td colSpan={4} className="empty-row">
+                  Set source and target folders, then click Compare.
                 </td>
               </tr>
             ) : (
-              rows.map((row) => (
-                <tr
-                  key={row.id}
-                  className={`${rowClass(row)} ${selectedRowId === row.id ? 'row-selected' : ''}`}
-                  onClick={() => onSelectRow(row)}
-                >
-                  <td>
-                    <input
-                      type="checkbox"
-                      checked={row.included}
-                      disabled={row.action === 'Skip'}
-                      onChange={(e) => onToggleIncluded(row.id, e.target.checked)}
-                    />
-                  </td>
-                  <td className="path-cell">{row.relPath}</td>
-                  <td>
-                    {row.left
-                      ? `${formatSize(row.left.size)} · ${formatDate(row.left.mtimeMs)}`
-                      : '—'}
-                  </td>
-                  <td>
-                    {row.right
-                      ? `${formatSize(row.right.size)} · ${formatDate(row.right.mtimeMs)}`
-                      : '—'}
-                  </td>
-                  <td>{row.action}</td>
-                  <td>{adsBadge(row)}</td>
-                </tr>
-              ))
+              rows.map((row) => {
+                const ads = adsHint(row)
+                return (
+                  <tr
+                    key={row.id}
+                    className={`${rowClass(row)} ${selectedRowId === row.id ? 'row-selected' : ''}`}
+                    onClick={() => onSelectRow(row)}
+                    onDoubleClick={() => onRowDoubleClick(row)}
+                  >
+                    <td>
+                      <input
+                        type="checkbox"
+                        checked={row.included}
+                        disabled={row.action === 'Skip'}
+                        onChange={(e) => onToggleIncluded(row.id, e.target.checked)}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    </td>
+                    <td className="path-cell">
+                      {row.leftPath ?? (row.left ? row.relPath : '—')}
+                      {ads ? <span className="ads-hint"> · {ads}</span> : null}
+                    </td>
+                    <td className="action-cell">{row.action}</td>
+                    <td className="path-cell">{row.rightPath ?? (row.right ? row.relPath : '—')}</td>
+                  </tr>
+                )
+              })
             )}
           </tbody>
         </table>

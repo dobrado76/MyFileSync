@@ -15,7 +15,7 @@ All paths from renderer/CLI/job files pass through main-process normalization:
 1. **`requireAbsolute(path)`** — reject relative, empty, `..` escape after normalize.
 2. **Resolve to absolute** with `path.resolve` on Windows; preserve UNC (`\\server\share`).
 3. **Long paths** — prefix `\\?\` when ≥ 260 chars for Win32 APIs (ADS stream paths).
-4. **Reject** `mfe-remote://` or future non-local schemes unless explicitly supported.
+4. **Reject** unknown URL schemes (`file:` / UNC / drive letters only).
 
 Job JSON stores paths as typed strings; validate on load with Zod.
 

@@ -145,10 +145,25 @@ export function planAction(
   }
 }
 
-export function computeStats(rows: CompareRow[]): CompareStats {
+export function accountDiff(stats: CompareStats, row: CompareRow): void {
+  stats.total++
+  if (row.category === 'equal') stats.equal++
+  if (row.included && row.action !== 'Skip') stats.toSync++
+  if (row.action === 'Create') stats.creates++
+  if (row.action === 'Update' || row.action === 'UpdateStreamsOnly') stats.updates++
+  if (row.action === 'Delete') stats.deletes++
+  if (row.category === 'adsDiff' || !row.adsDelta.equal) stats.adsDiffs++
+}
+
+export function accountEquals(stats: CompareStats, count: number): void {
+  stats.total += count
+  stats.equal += count
+}
+
+export function computeStats(rows: CompareRow[], extraEqual = 0): CompareStats {
   const stats = {
-    total: rows.length,
-    equal: 0,
+    total: extraEqual,
+    equal: extraEqual,
     toSync: 0,
     creates: 0,
     updates: 0,
@@ -157,32 +172,35 @@ export function computeStats(rows: CompareRow[]): CompareStats {
   }
 
   for (const row of rows) {
-    if (row.category === 'equal') stats.equal++
-    if (row.included && row.action !== 'Skip') stats.toSync++
-    if (row.action === 'Create') stats.creates++
-    if (row.action === 'Update' || row.action === 'UpdateStreamsOnly') stats.updates++
-    if (row.action === 'Delete') stats.deletes++
-    if (row.category === 'adsDiff' || !row.adsDelta.equal) stats.adsDiffs++
+    accountDiff(stats, row)
   }
 
   return stats
 }
 
-export function rowMatchesFilter(row: CompareRow, filter: CompareFilter): boolean {
+export function categoryMatchesFilter(
+  category: CompareCategory,
+  adsEqual: boolean,
+  filter: CompareFilter,
+): boolean {
   switch (filter) {
     case 'all':
       return true
     case 'differences':
-      return row.category !== 'equal'
+      return category !== 'equal'
     case 'leftOnly':
-      return row.category === 'leftOnly'
+      return category === 'leftOnly'
     case 'rightOnly':
-      return row.category === 'rightOnly'
+      return category === 'rightOnly'
     case 'adsDiff':
-      return row.category === 'adsDiff' || !row.adsDelta.equal
+      return category === 'adsDiff' || !adsEqual
     case 'errors':
       return false
     default:
       return true
   }
+}
+
+export function rowMatchesFilter(row: CompareRow, filter: CompareFilter): boolean {
+  return categoryMatchesFilter(row.category, row.adsDelta.equal, filter)
 }

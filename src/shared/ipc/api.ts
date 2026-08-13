@@ -59,6 +59,7 @@ export type CompareRunResponse = {
   runId: string
   rowCount: number
   stats: CompareStats
+  cancelled: boolean
 }
 
 export type CompareGetRowsResponse = { rows: CompareRow[]; total: number }
@@ -89,14 +90,14 @@ export type MyFileSyncApi = {
   jobDelete: (req: { id: string }) => Promise<Result<{ ok: true }>>
   jobImportJson: (req: { path: string }) => Promise<Result<{ id: string }>>
   jobImportIni: (req: { path: string }) => Promise<Result<{ id: string; warnings: string[] }>>
-  compareRun: (req: { jobId: string }) => Promise<Result<CompareRunResponse>>
+  compareRun: (req: { jobId: string; runId?: string }) => Promise<Result<CompareRunResponse>>
   compareGetRows: (req: {
     runId: string
     offset: number
     limit: number
     filter?: CompareFilter
   }) => Promise<Result<CompareGetRowsResponse>>
-  compareCancel: (req: { runId: string }) => Promise<Result<{ ok: true }>>
+  compareCancel: (req?: { runId?: string }) => Promise<Result<{ ok: true }>>
   compareSetRowIncluded: (req: {
     runId: string
     rowId: string

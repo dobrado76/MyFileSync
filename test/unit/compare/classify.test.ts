@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { classifyPair, computeAdsDelta, planAction } from '@shared/compare/classify'
+import { classifyPair, computeAdsDelta, computeStats, planAction } from '@shared/compare/classify'
 import { createDefaultJob } from '@shared/schemas/job'
 import type { SideRecord } from '@shared/schemas/compare'
 
@@ -47,5 +47,14 @@ describe('classify', () => {
     )
     expect(delta.added).toBe(1)
     expect(delta.equal).toBe(false)
+  })
+
+  it('counts equals that were not stored as rows', () => {
+    const left = side({ relPath: 'a.txt' })
+    const right = side({ relPath: 'b.txt', dataSize: 200 })
+    const row = classifyPair('pair', 'b.txt', left, right, job)
+    const stats = computeStats([row], 12)
+    expect(stats.equal).toBe(12)
+    expect(stats.total).toBe(13)
   })
 })

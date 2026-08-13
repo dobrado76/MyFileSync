@@ -1,5 +1,5 @@
 ---
-description: MyFileSync agent rules — standalone sync/backup app
+description: MyFileSync agent rules — Windows folder sync/backup app
 globs:
 alwaysApply: true
 ---
@@ -8,9 +8,9 @@ alwaysApply: true
 
 ## Scope
 
-- This repo is **MyFileSync** — a standalone Windows-first folder sync/backup app (Electron + React).
+- This repo is **MyFileSync** — a Windows-first folder sync/backup app (Electron + React).
 - **Do not** reference, import, copy from, or depend on **MyFileExplorer**, **BackupMirror** source, or any other project.
-- Canonical plan: `PLAN.md`. Specs: `docs/`. Implement against those files only.
+- Product docs: `README.md`, `PLAN.md`, `docs/`. Implement against those files.
 - Legacy **BackupMirror** behavior may be referenced from specs for parity; reimplement in this repo.
 
 ## Architecture
@@ -23,7 +23,7 @@ alwaysApply: true
 ## ADS (core differentiator)
 
 - NTFS→NTFS: use **CopyFileEx** / **CopyFileW** or explicit **copyStreams** — never `$DATA`-only stream pipe for large files.
-- Compare and sync **alternate stream manifests** (name + size; optional hash).
+- Compare and sync **alternate stream manifests** (name + size; optional hash). Always list ADS; do not assume streams match because size/time match.
 - Optional compare cache in file ADS (`MD5`, folder stats) is **per-job opt-in** (`ads.writeCacheToAds`).
 - Plain-language errors for read-only folders and permission denied — not raw EPERM.
 
@@ -41,8 +41,8 @@ alwaysApply: true
 
 ## Specs vs code
 
-- Until scaffold exists, prefer updating `docs/` + `PLAN.md` when product decisions change.
 - Keep [docs/DECISIONS.md](docs/DECISIONS.md) in sync when locking behavior.
+- Product docs describe the shipped app, not a delivery plan.
 
 ## Tests
 

@@ -9,8 +9,8 @@ const sourcePath = path.join(fixtureRoot, 'sample-with-ads.txt')
 const destPath = path.join(fixtureRoot, 'sample-copy-target.txt')
 
 describe.skipIf(process.platform !== 'win32')('ADS integration (NTFS)', () => {
-  it('lists alternate streams on fixture file', () => {
-    const result = listStreams(sourcePath)
+  it('lists alternate streams on fixture file', async () => {
+    const result = await listStreams(sourcePath)
     expect(result.ok).toBe(true)
     if (!result.ok) return
 
@@ -28,8 +28,8 @@ describe.skipIf(process.platform !== 'win32')('ADS integration (NTFS)', () => {
 
     expect(copyResult.value.copiedStreams.length).toBeGreaterThanOrEqual(2)
 
-    const sourceList = listStreams(sourcePath)
-    const destList = listStreams(destPath)
+    const sourceList = await listStreams(sourcePath)
+    const destList = await listStreams(destPath)
     expect(sourceList.ok && destList.ok).toBe(true)
     if (!sourceList.ok || !destList.ok) return
 

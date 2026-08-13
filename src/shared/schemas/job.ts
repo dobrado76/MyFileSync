@@ -16,8 +16,8 @@ export const sftpConfigSchema = z
 
 export const jobPairSchema = z.object({
   id: z.string().min(1),
-  left: z.string().min(1),
-  right: z.string().min(1),
+  left: z.string(),
+  right: z.string(),
   leftType: pairEndpointTypeSchema.optional(),
   rightType: pairEndpointTypeSchema.optional(),
   leftSftp: sftpConfigSchema.optional(),
@@ -65,6 +65,7 @@ export const jobSchema = z.object({
     autoExpandCompareTree: z.boolean(),
     verifyAfterCopy: z.boolean(),
     archiveFlagScanOnly: z.boolean().default(false),
+    minimizeRefresh: z.boolean().default(true),
   }),
   parallelism: z.object({
     compareWorkers: z.number().int().min(1).max(32),
@@ -162,6 +163,7 @@ export function createDefaultJob(name = 'New job'): JobFile {
       autoExpandCompareTree: true,
       verifyAfterCopy: false,
       archiveFlagScanOnly: false,
+      minimizeRefresh: true,
     },
     parallelism: {
       compareWorkers: 4,

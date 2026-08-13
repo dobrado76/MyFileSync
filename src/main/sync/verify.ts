@@ -36,8 +36,8 @@ export async function verifyCopy(
     }
 
     if (process.platform === 'win32') {
-      const sourceManifest = listStreams(source)
-      const destManifest = listStreams(dest)
+      const sourceManifest = await listStreams(source)
+      const destManifest = await listStreams(dest)
       if (!sourceManifest.ok) return sourceManifest
       if (!destManifest.ok) return destManifest
       if (!manifestsEqual(sourceManifest.value, destManifest.value)) {

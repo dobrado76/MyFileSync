@@ -1,12 +1,8 @@
-# BackupMirror / DoubleChecker migration
+# BackupMirror / DoubleChecker — INI reference
 
-Legacy app: **BackupMirror** (assembly product name **DoubleChecker**, v1.0.0.0, 2013) at:
+Legacy app: **BackupMirror** (assembly product name **DoubleChecker**, 2013). Config format: **`optionsBackup.ini`**.
 
-`E:\Dev\Projects\!CPP\MyExplorer\MyExplorer\BackupMirror`
-
-Config format: **`optionsBackup.ini`** next to the EXE.
-
-MyFileSync replaces INI with **JSON jobs** but provides **Import INI** (Phase 1).
+MyFileSync jobs are JSON. The workbench does **not** import INI. This page is a field-mapping reference for parity with old jobs, not a product feature.
 
 ## INI structure
 
@@ -20,7 +16,7 @@ MyFileSync replaces INI with **JSON jobs** but provides **Import INI** (Phase 1)
 | `UseVolumeShadowCopy` | `True` | `vss.enabled` |
 | `AutoBackup` | `False` | `behavior.autoSyncAfterCompare` |
 | `FastCompare` | `True` | `compare.fastFolderCompare` |
-| `UseArchiveFlag` | `False` | `behavior.archiveFlagScanOnly` (Phase 1.5) |
+| `UseArchiveFlag` | `False` | `behavior.archiveFlagScanOnly` |
 | `PosX`, `PosY`, `Width`, `Height` | integers | `window-state.json` (not in job JSON) |
 | `LastFolder` | path | `settings.lastBrowsePath` |
 
@@ -73,16 +69,16 @@ Importer sets sensible defaults for fields BackupMirror had implicitly:
 | BackupMirror | MyFileSync |
 |--------------|------------|
 | WinForms action tree | Side-by-side grid + detail dialog |
-| `GetFiles` / `GetFilesFast` | `compare/walk.ts` + fast folder ADS |
+| `GetFiles` / `GetFilesFast` | `compare/getFiles.ts` + fast folder ADS |
 | `CloneFile` / `CloneDirectory` | `sync/copy.ts` + `ads/copyStreams.ts` |
 | MD5 in ADS stream | `ads.writeCacheToAds` + stream name `MD5` |
 | Folder stats ADS | Same stream names as optional cache |
-| Hard link siblings | Phase 1.5 `sync/hardlink.ts` |
-| AlphaVSS | Phase 1.5 `sync/vss.ts` |
-| Single-threaded + `DoEvents` | Worker pool + async IPC progress |
+| Hard link siblings | `sync/hardlink.ts` |
+| Volume Shadow Copy | `vss.enabled` (stub / hint) |
+| Single-threaded + `DoEvents` | Sequential paired walk + event-loop yield |
 | Exact filter match only | Wildcard filters (superset) |
 
-## Import algorithm (Phase 1)
+## Import algorithm
 
 ```
 1. Read INI as UTF-8 (fallback Latin-1)

@@ -2,12 +2,8 @@ import { useEffect } from 'react'
 import { shouldShowUpdateBanner, useWorkbenchStore } from './store/workbenchStore'
 import { StatusBar } from './components/StatusBar'
 import { UpdateBanner } from './components/UpdateBanner'
-import { SettingsPanel } from './components/SettingsPanel'
-import { JobsRail } from './components/JobsRail'
-import { JobEditor } from './components/JobEditor'
-import { CompareGrid } from './components/CompareGrid'
-import { RowDetailPanel } from './components/RowDetailPanel'
-import { RunLogPanel } from './components/RunLogPanel'
+import { SettingsModal } from './components/SettingsModal'
+import { BackupMirrorWorkbench } from './components/BackupMirrorWorkbench'
 import { SyncConfirmModal } from './components/SyncConfirmModal'
 import { formatDisplayVersion } from '@shared/version'
 
@@ -15,13 +11,14 @@ export default function App() {
   const state = useWorkbenchStore()
   const {
     jobs,
-    activeJobId,
     activeJob,
-    editorOpen,
+    activePairIndex,
+    mainTab,
     compareRows,
     compareFilter,
     compareBusy,
     compareStats,
+    syncBusy,
     statusText,
     logs,
     showDeleteConfirm,
@@ -30,19 +27,27 @@ export default function App() {
     pendingUpdate,
     busy,
     selectedRow,
+    settingsOpen,
     init,
     selectJob,
     newJob,
-    importIni,
-    openEditor,
-    closeEditor,
     saveActiveJob,
+    deleteActiveJob,
     updateActiveJob,
-    browsePairPath,
+    setMainTab,
+    setActivePairIndex,
+    addPair,
+    removeActivePair,
+    moveActivePairUp,
+    moveActivePairDown,
+    flipActivePair,
+    clearCompareList,
+    browseActivePairPath,
     runCompare,
     runSync,
     confirmSync,
     cancelSyncConfirm,
+    cancelOperation,
     setCompareFilter,
     toggleRowIncluded,
     browseUpdatesFolder,
@@ -52,6 +57,8 @@ export default function App() {
     exportSettings,
     importSettings,
     selectRow,
+    openSettings,
+    closeSettings,
     handleSyncEvent,
     appVersion,
   } = state
@@ -76,80 +83,72 @@ export default function App() {
         />
       ) : null}
 
-      <header className="app-header">
-        <div>
-          <h1 className="app-title">MyFileSync</h1>
-          <p className="app-subtitle">
-            {formatDisplayVersion(appVersion)} · NTFS folder sync with ADS fidelity
-          </p>
+      <header className="app-header app-header-compact">
+        <h1 className="app-title">MyFileSync</h1>
+        <span className="app-subtitle">{formatDisplayVersion(appVersion)}</span>
+        <div className="header-actions">
+          <button type="button" className="button" onClick={openSettings}>
+            Settings
+          </button>
         </div>
-        {activeJob ? (
-          <div className="header-actions">
-            <button type="button" className="button" onClick={openEditor}>
-              Edit job
-            </button>
-            <button type="button" className="button" onClick={() => void saveActiveJob()}>
-              Save
-            </button>
-          </div>
-        ) : null}
       </header>
 
-      <div className="workbench">
-        <JobsRail
-          jobs={jobs}
-          activeJobId={activeJobId}
-          onSelect={(id) => void selectJob(id)}
-          onNew={() => void newJob()}
-          onImportIni={() => void importIni()}
-        />
+      <BackupMirrorWorkbench
+        jobs={jobs}
+        activeJob={activeJob}
+        activePairIndex={activePairIndex}
+        mainTab={mainTab}
+        compareRows={compareRows}
+        compareFilter={compareFilter}
+        compareBusy={compareBusy}
+        compareStats={compareStats}
+        syncBusy={syncBusy}
+        selectedRow={selectedRow}
+        logs={logs}
+        busy={busy}
+        onMainTabChange={setMainTab}
+        onSelectJob={(id) => void selectJob(id)}
+        onNewJob={() => void newJob()}
+        onChangeJob={updateActiveJob}
+        onBrowsePath={(side) => void browseActivePairPath(side)}
+        onVariantChange={(variant) => updateActiveJob({ variant })}
+        onAddPair={addPair}
+        onRemovePair={removeActivePair}
+        onMovePairUp={moveActivePairUp}
+        onMovePairDown={moveActivePairDown}
+        onFlipPair={flipActivePair}
+        onClearList={clearCompareList}
+        onSaveJob={() => void saveActiveJob()}
+        onDeleteJob={() => {
+          if (!activeJob) return
+          if (
+            window.confirm(
+              `Delete job "${activeJob.name}"?\n\nThis removes it from your job list. It cannot be undone.`,
+            )
+          ) {
+            void deleteActiveJob()
+          }
+        }}
+        onCompare={() => void runCompare()}
+        onSync={() => void runSync()}
+        onCancel={() => void cancelOperation()}
+        onFilterChange={(f) => void setCompareFilter(f)}
+        onToggleIncluded={(id, included) => void toggleRowIncluded(id, included)}
+        onSelectRow={selectRow}
+        onPairIndexChange={setActivePairIndex}
+      />
 
-        <div className="workbench-main">
-          {compareStats ? (
-            <p className="compare-summary">
-              {compareStats.total} items · {compareStats.toSync} to sync · {compareStats.deletes}{' '}
-              deletes
-            </p>
-          ) : null}
-
-          <CompareGrid
-            rows={compareRows}
-            filter={compareFilter}
-            busy={compareBusy}
-            selectedRowId={selectedRow?.id ?? null}
-            onFilterChange={(f) => void setCompareFilter(f)}
-            onCompare={() => void runCompare()}
-            onSync={() => void runSync()}
-            onToggleIncluded={(id, included) => void toggleRowIncluded(id, included)}
-            onSelectRow={selectRow}
-          />
-
-          <RowDetailPanel row={selectedRow} onClose={() => selectRow(null)} />
-
-          <SettingsPanel
-            updatesFolder={updatesFolder}
-            updatesStatus={updatesStatus}
-            busy={busy}
-            onBrowseUpdatesFolder={() => void browseUpdatesFolder()}
-            onCheckForUpdates={() => void checkForUpdates()}
-            onExportSettings={() => void exportSettings()}
-            onImportSettings={() => void importSettings()}
-          />
-
-          <RunLogPanel logs={logs} />
-        </div>
-      </div>
-
-      {activeJob ? (
-        <JobEditor
-          job={activeJob}
-          open={editorOpen}
-          onClose={closeEditor}
-          onSave={() => void saveActiveJob()}
-          onChange={updateActiveJob}
-          onBrowse={(pairId, side) => void browsePairPath(pairId, side)}
-        />
-      ) : null}
+      <SettingsModal
+        open={settingsOpen}
+        updatesFolder={updatesFolder}
+        updatesStatus={updatesStatus}
+        busy={busy}
+        onClose={closeSettings}
+        onBrowseUpdatesFolder={() => void browseUpdatesFolder()}
+        onCheckForUpdates={() => void checkForUpdates()}
+        onExportSettings={() => void exportSettings()}
+        onImportSettings={() => void importSettings()}
+      />
 
       <SyncConfirmModal
         open={showDeleteConfirm}
@@ -158,7 +157,7 @@ export default function App() {
         onCancel={cancelSyncConfirm}
       />
 
-      <StatusBar text={statusText} />
+      <StatusBar text={statusText} showElapsed={compareBusy || syncBusy} />
     </div>
   )
 }
