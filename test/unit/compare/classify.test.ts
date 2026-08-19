@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { classifyPair, computeAdsDelta, computeStats, planAction, rowMatchesFilter } from '@shared/compare/classify'
+import { classifyPair, computeAdsDelta, computeStats, pairIsEqual, planAction, rowMatchesFilter } from '@shared/compare/classify'
 import { createDefaultJob } from '@shared/schemas/job'
 import type { SideRecord } from '@shared/schemas/compare'
 
@@ -22,6 +22,13 @@ describe('classify', () => {
     const row = classifyPair('pair', 'a.txt', left, right, job)
     expect(row.category).toBe('equal')
     expect(row.action).toBe('Skip')
+    expect(pairIsEqual(left, right, job)).toBe(true)
+  })
+
+  it('pairIsEqual is false when one side is missing', () => {
+    const left = side({ relPath: 'a.txt' })
+    expect(pairIsEqual(left, undefined, job)).toBe(false)
+    expect(pairIsEqual(undefined, left, job)).toBe(false)
   })
 
   it('detects ADS-only diff', () => {

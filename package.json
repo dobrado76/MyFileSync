@@ -1,6 +1,6 @@
 {
   "name": "myfilesync",
-  "version": "0.1.0",
+  "version": "0.1.25",
   "description": "Windows-first folder sync with NTFS Alternate Data Stream fidelity",
   "main": "./out/main/index.js",
   "author": "",
@@ -11,7 +11,8 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
-    "dist": "npm run build && electron-builder --win",
+    "dist": "node scripts/bump-patch.mjs && npm run dist:nobump",
+    "dist:nobump": "npm run build && node scripts/prepare-dist.mjs && electron-builder --win && node scripts/prune-old-installers.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.node.json",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -73,7 +74,8 @@
       "target": [
         "nsis"
       ],
-      "artifactName": "MyFileSync-Setup-${version}.${ext}"
+      "artifactName": "MyFileSync-Setup-${version}.${ext}",
+      "signExecutable": false
     },
     "nsis": {
       "installerIcon": "build/icon.ico",

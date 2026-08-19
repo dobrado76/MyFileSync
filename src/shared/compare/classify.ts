@@ -52,6 +52,18 @@ export function toSideSummary(record: SideRecord): SideSummary {
   }
 }
 
+/** True when both sides exist and classify would return category `equal` (no row allocated). */
+export function pairIsEqual(
+  left: SideRecord | undefined,
+  right: SideRecord | undefined,
+  job: JobFile,
+): boolean {
+  if (!left || !right) return false
+  const hashContent =
+    job.compare.method === 'content' || job.compare.hashWhenSizeOrTimeDiffers
+  return recordsEqual(left, right, hashContent, adsIgnoredStreamNames(job))
+}
+
 export function recordsEqual(
   a: SideRecord,
   b: SideRecord,

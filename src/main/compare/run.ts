@@ -1,6 +1,7 @@
 import type { BrowserWindow } from 'electron'
 import type { CompareFilter, CompareRun, CompareRow, CompareStats, FolderTreeNode } from '@shared/schemas/compare'
-import type { JobFile } from '@shared/schemas/job'
+import { z } from 'zod'
+import { enabledJobPairs, jobSchema, type JobFile } from '@shared/schemas/job'
 import { loadJob } from '../jobs/store'
 import { openDb, loadStatesForPair } from '../db/syncState'
 import { getFiles } from '../compare/getFiles'
@@ -11,7 +12,13 @@ import {
 } from '../compare/rowStore'
 import { applyMoveDetection } from '../compare/moveDetect'
 import { preflightPairUncPaths } from '../remote/preflight'
-import { pathMatchesFolderName, pathMatchesPrefix } from '@shared/compare/folderTree'
+import {
+  isMultiPairTree,
+  pairLabelFromLeftPath,
+  pathMatchesFolderName,
+  rowMatchesTreePath,
+  type PairTreeLabel,
+} from '@shared/compare/folderTree'
 
 export type CompareEvent =
   | { type: 'compare:progress'; runId: string; done: number; total: number; currentPath?: string }
@@ -69,6 +76,10 @@ const compareRuns = new Map<string, ActiveCompareRun>()
 const cancelFlags = new Map<string, boolean>()
 let activeCompareRunId: string | null = null
 
+function pairLabelsForJob(job: JobFile): PairTreeLabel[] {
+  return enabledJobPairs(job).map((p) => ({ pairId: p.id, label: pairLabelFromLeftPath(p.left) }))
+}
+
 export function getCompareRun(runId: string): ActiveCompareRun | undefined {
   return compareRuns.get(runId)
 }
@@ -88,11 +99,11 @@ export async function runCompare(
   runId: string,
   jobId: string,
   emit: (event: CompareEvent) => void,
-  jobOverride?: JobFile,
+  jobOverride?: z.input<typeof jobSchema>,
 ): Promise<ActiveCompareRun> {
   let job: JobFile
   if (jobOverride) {
-    job = jobOverride
+    job = jobSchema.parse(jobOverride)
   } else {
     const jobResult = await loadJob(jobId)
     if (!jobResult.ok) {
@@ -113,7 +124,7 @@ export async function runCompare(
     cancelFlags.set(runId, false)
   }
 
-  const enabledPairs = job.pairs.filter((p) => p.enabled)
+  const enabledPairs = enabledJobPairs(job)
   if (enabledPairs.length === 0) {
     await store.dispose()
     throw new Error('No enabled folder pairs. Edit the job and enable at least one pair.')
@@ -155,9 +166,8 @@ export async function runCompare(
         isCancelled: () => cancelFlags.get(runId) === true,
       })
 
-      if (cancelFlags.get(runId)) break
-
       store.addEquals(result.equalCount)
+      if (cancelFlags.get(runId)) break
       pairIndex++
     }
 
@@ -206,7 +216,7 @@ export async function getCompareRows(
 ): Promise<{ rows: CompareRow[]; total: number }> {
   const run = compareRuns.get(runId)
   if (!run) return { rows: [], total: 0 }
-  const page = await run.store.getPage(offset, limit, filter, pathPrefix)
+  const page = await run.store.getPage(offset, limit, filter, pathPrefix, pairLabelsForJob(run.job))
   return {
     rows: page.rows.map((row) => hydrateRowPaths(row, run.job)),
     total: page.total,
@@ -221,7 +231,7 @@ export async function getCompareFolderTree(
   if (!run) {
     return { path: '', name: '', count: 0, creates: 0, updates: 0, deletes: 0, moves: 0, children: [] }
   }
-  return run.store.getFolderTree(filter)
+  return run.store.getFolderTree(filter, pairLabelsForJob(run.job))
 }
 
 export async function dropCompareRows(
@@ -230,6 +240,8 @@ export async function dropCompareRows(
 ): Promise<{ dropped: number; stats: CompareStats } | undefined> {
   const run = compareRuns.get(runId)
   if (!run) return undefined
+  const labels = pairLabelsForJob(run.job)
+  const multiPair = isMultiPairTree(labels)
   const dropped = await run.store.dropMatching((row) => {
     if (opts.folderName) {
       return (
@@ -238,7 +250,7 @@ export async function dropCompareRows(
       )
     }
     const prefix = opts.pathPrefix ?? ''
-    return pathMatchesPrefix(row.relPath, prefix) || pathMatchesPrefix(row.fromRelPath ?? '', prefix)
+    return rowMatchesTreePath(row, prefix, multiPair)
   })
   run.stats = run.store.getStats()
   return { dropped, stats: run.stats }

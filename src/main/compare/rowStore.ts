@@ -13,9 +13,16 @@ import {
   type CompareRow,
   type CompareStats,
   type FolderTreeNode,
+  type SyncActionType,
 } from '@shared/schemas/compare'
-import { buildFolderTree, pathMatchesPrefix } from '@shared/compare/folderTree'
+import {
+  createFolderTreeBuilder,
+  isMultiPairTree,
+  rowMatchesTreePath,
+  type PairTreeLabel,
+} from '@shared/compare/folderTree'
 import type { JobFile } from '@shared/schemas/job'
+import { yieldToEventLoop } from '../win32/nativeLock'
 
 const CATEGORY_CODE: Record<CompareCategory, number> = {
   equal: 0,
@@ -55,10 +62,16 @@ export class CompareRowStore {
   private count = 0
   private bytes = 0
   private includedOverrides = new Map<string, boolean>()
+  private syncErrorIds = new Set<string>()
   private stats: CompareStats = createEmptyStats()
   private extraEqual = 0
   private fh: fs.promises.FileHandle | null = null
   private writableClosed = false
+  private pairIds: string[] = []
+  private relPaths: string[] = []
+  private fromRelPaths: string[] = []
+  private actions: SyncActionType[] = []
+  private dirBits = new Uint8Array(1024)
 
   constructor(filePath: string) {
     this.filePath = filePath
@@ -75,6 +88,7 @@ export class CompareRowStore {
     this.includedBits[this.count] = row.included ? 1 : 0
     this.deleteBits[this.count] = row.action === 'Delete' ? 1 : 0
     this.moveBits[this.count] = row.action === 'Move' || row.action === 'Rename' ? 1 : 0
+    this.recordSlim(this.count, row)
     this.count++
     accountDiff(this.stats, row)
     const size = Buffer.byteLength(line)
@@ -98,6 +112,22 @@ export class CompareRowStore {
 
   get length(): number {
     return this.count
+  }
+
+  markSyncError(rowId: string): void {
+    this.syncErrorIds.add(rowId)
+  }
+
+  clearSyncError(rowId: string): void {
+    this.syncErrorIds.delete(rowId)
+  }
+
+  clearSyncErrors(): void {
+    this.syncErrorIds.clear()
+  }
+
+  hasSyncErrors(): boolean {
+    return this.syncErrorIds.size > 0
   }
 
   setIncluded(rowId: string, included: boolean): boolean {
@@ -129,22 +159,14 @@ export class CompareRowStore {
     limit: number,
     filter: CompareFilter,
     pathPrefix = '',
+    pairLabels?: PairTreeLabel[],
   ): Promise<{ rows: CompareRow[]; total: number }> {
+    const multiPair = isMultiPairTree(pairLabels)
     const rows: CompareRow[] = []
     let total = 0
     for (let i = 0; i < this.count; i++) {
       if (!this.matches(i, filter)) continue
-      if (pathPrefix) {
-        const row = await this.readIndex(i)
-        if (!row) continue
-        const inFolder =
-          pathMatchesPrefix(row.relPath, pathPrefix) ||
-          pathMatchesPrefix(row.fromRelPath ?? '', pathPrefix)
-        if (!inFolder) continue
-        if (total >= offset && rows.length < limit) rows.push(row)
-        total++
-        continue
-      }
+      if (pathPrefix && !this.slimMatchesPrefix(i, pathPrefix, multiPair)) continue
       if (total >= offset && rows.length < limit) {
         const row = await this.readIndex(i)
         if (row) rows.push(row)
@@ -154,14 +176,27 @@ export class CompareRowStore {
     return { rows, total }
   }
 
-  async getFolderTree(filter: CompareFilter): Promise<FolderTreeNode> {
-    const rows: CompareRow[] = []
+  async getFolderTree(filter: CompareFilter, pairLabels?: PairTreeLabel[]): Promise<FolderTreeNode> {
+    const builder = createFolderTreeBuilder(pairLabels)
     for (let i = 0; i < this.count; i++) {
       if (!this.matches(i, filter)) continue
-      const row = await this.readIndex(i)
-      if (row) rows.push(row)
+      builder.add({
+        pairId: this.pairIds[i] ?? '',
+        relPath: this.relPaths[i] ?? '',
+        fromRelPath: this.fromRelPaths[i] || undefined,
+        action: this.actions[i] ?? 'Skip',
+        category: CODE_CATEGORY[this.categories[i] ?? 0],
+        left: this.dirBits[i] === 1 ? { isDir: true } : undefined,
+      })
+      if (i > 0 && i % 8192 === 0) await yieldToEventLoop()
     }
-    return buildFolderTree(rows)
+    return builder.finish()
+  }
+
+  async getRow(rowId: string): Promise<CompareRow | undefined> {
+    const index = Number(rowId)
+    if (!Number.isInteger(index) || index < 0 || index >= this.count) return undefined
+    return this.readIndex(index)
   }
 
   async dropMatching(match: (row: CompareRow) => boolean): Promise<number> {
@@ -200,6 +235,11 @@ export class CompareRowStore {
     const includedBits = new Uint8Array(Math.max(1024, this.count))
     const deleteBits = new Uint8Array(Math.max(1024, this.count))
     const moveBits = new Uint8Array(Math.max(1024, this.count))
+    const dirBits = new Uint8Array(Math.max(1024, this.count))
+    const pairIds: string[] = []
+    const relPaths: string[] = []
+    const fromRelPaths: string[] = []
+    const actions: SyncActionType[] = []
     const stats = createEmptyStats()
     accountEquals(stats, this.extraEqual)
 
@@ -218,6 +258,11 @@ export class CompareRowStore {
       includedBits[count] = row.included ? 1 : 0
       deleteBits[count] = row.action === 'Delete' ? 1 : 0
       moveBits[count] = row.action === 'Move' || row.action === 'Rename' ? 1 : 0
+      dirBits[count] = row.left?.isDir || row.right?.isDir ? 1 : 0
+      pairIds[count] = row.pairId
+      relPaths[count] = row.relPath
+      fromRelPaths[count] = row.fromRelPath ?? ''
+      actions[count] = row.action
       count++
       accountDiff(stats, row)
       const size = Buffer.byteLength(line)
@@ -252,6 +297,11 @@ export class CompareRowStore {
     this.includedBits = includedBits
     this.deleteBits = deleteBits
     this.moveBits = moveBits
+    this.dirBits = dirBits
+    this.pairIds = pairIds
+    this.relPaths = relPaths
+    this.fromRelPaths = fromRelPaths
+    this.actions = actions
     this.count = count
     this.bytes = bytes
     this.stats = stats
@@ -273,6 +323,9 @@ export class CompareRowStore {
   }
 
   private matches(index: number, filter: CompareFilter): boolean {
+    if (filter === 'errors') {
+      return this.syncErrorIds.has(String(index))
+    }
     const category = CODE_CATEGORY[this.categories[index] ?? 0] ?? 'equal'
     const adsEqual = this.adsEqualBits[index] === 1
     const action =
@@ -337,6 +390,29 @@ export class CompareRowStore {
     const moves = new Uint8Array(next)
     moves.set(this.moveBits)
     this.moveBits = moves
+    const dirs = new Uint8Array(next)
+    dirs.set(this.dirBits)
+    this.dirBits = dirs
+  }
+
+  private recordSlim(index: number, row: CompareRow): void {
+    this.pairIds[index] = row.pairId
+    this.relPaths[index] = row.relPath
+    this.fromRelPaths[index] = row.fromRelPath ?? ''
+    this.actions[index] = row.action
+    this.dirBits[index] = row.left?.isDir || row.right?.isDir ? 1 : 0
+  }
+
+  private slimMatchesPrefix(index: number, pathPrefix: string, multiPair: boolean): boolean {
+    return rowMatchesTreePath(
+      {
+        pairId: this.pairIds[index] ?? '',
+        relPath: this.relPaths[index] ?? '',
+        fromRelPath: this.fromRelPaths[index] || undefined,
+      },
+      pathPrefix,
+      multiPair,
+    )
   }
 }
 

@@ -1,6 +1,8 @@
-import { BrowserWindow, dialog, ipcMain } from 'electron'
+import { existsSync } from 'node:fs'
+import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import type { ZodType } from 'zod'
-import { ok, validationError, type Result } from '@shared/result'
+import { ioError, ok, validationError, type Result } from '@shared/result'
+import { mfeRevealUri } from '@shared/shell/mfe'
 import { IPC_CHANNELS, EVENT_CHANNELS } from '@shared/ipc/contract'
 import {
   adsCopyRequestSchema,
@@ -19,6 +21,9 @@ import {
   saveFileRequestSchema,
   pickFolderRequestSchema,
   runUpdateRequestSchema,
+  showItemInFolderRequestSchema,
+  openPathRequestSchema,
+  clearReadOnlyRequestSchema,
   settingsSetRequestSchema,
   settingsPathRequestSchema,
   syncCancelRequestSchema,
@@ -47,6 +52,7 @@ import {
   setRowIncluded,
 } from '../compare/run'
 import { cancelSyncRun, executeSync, getSyncRun } from '../sync/execute'
+import { clearReadOnly } from '../win32/attrs'
 import { startWatch, stopWatch, startWatchForEnabledJobs } from '../watch/realtime'
 
 type Handler<TReq, TRes> = (req: TReq) => Promise<Result<TRes>> | Result<TRes>
@@ -177,6 +183,36 @@ export function registerIpc(appVersion: string): void {
   handle(IPC_CHANNELS.APP_RUN_UPDATE, runUpdateRequestSchema, async (req) =>
     runInstaller(requireAbsolute(req.installerPath)),
   )
+  handle(IPC_CHANNELS.APP_SHOW_ITEM_IN_FOLDER, showItemInFolderRequestSchema, async (req) => {
+    const filePath = requireAbsolute(req.path)
+    if (!existsSync(filePath)) {
+      return validationError('That file or folder is not on disk.')
+    }
+    try {
+      await shell.openExternal(mfeRevealUri(filePath))
+    } catch (error) {
+      return ioError(
+        'Could not reveal that path in the file explorer.',
+        error instanceof Error ? error.message : String(error),
+      )
+    }
+    return ok({ ok: true as const })
+  })
+  handle(IPC_CHANNELS.APP_OPEN_PATH, openPathRequestSchema, async (req) => {
+    const filePath = requireAbsolute(req.path)
+    if (!existsSync(filePath)) {
+      return validationError('That file or folder is not on disk.')
+    }
+    const error = await shell.openPath(filePath)
+    if (error) {
+      return ioError('Windows could not open that file or folder.', error)
+    }
+    return ok({ ok: true as const })
+  })
+  handle(IPC_CHANNELS.PATH_CLEAR_READ_ONLY, clearReadOnlyRequestSchema, async (req) => {
+    const filePath = requireAbsolute(req.path)
+    return clearReadOnly(filePath)
+  })
 
   handleEmpty(IPC_CHANNELS.JOB_LIST, async () => ok({ jobs: await listJobs() }))
   handle(IPC_CHANNELS.JOB_GET, jobIdRequestSchema, async (req) => {
@@ -218,7 +254,7 @@ export function registerIpc(appVersion: string): void {
   handle(IPC_CHANNELS.COMPARE_RUN, compareRunRequestSchema, async (req) => {
     const runId = req.runId ?? crypto.randomUUID()
     try {
-      const run = await runCompare(runId, req.jobId, (event) => emitEvent(event))
+      const run = await runCompare(runId, req.jobId, (event) => emitEvent(event), req.job)
       return ok({
         runId,
         rowCount: run.stats.total,
@@ -267,6 +303,7 @@ export function registerIpc(appVersion: string): void {
       compareRun.store,
       (event) => emitEvent(event),
       req.pathPrefix ?? '',
+      req.rowIds,
     ).then(() => {
       compareRun.stats = compareRun.store.getStats()
     })

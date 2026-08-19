@@ -5,6 +5,7 @@ import { err, ioError, ok, type Result } from '@shared/result'
 import { listStreams } from './list'
 import { isCopyAborted } from '../win32/copy'
 import { copyFileTimes } from '../win32/times'
+import { clearReadOnlyIfExists, permissionDeniedError, plainIoMessage } from '../win32/attrs'
 
 export type CopyStreamsOptions = {
   excludeStreams?: string[]
@@ -37,6 +38,8 @@ export async function copyStreams(
   if (process.platform !== 'win32') {
     return ioError('Alternate data stream copy requires Windows.', 'Run on NTFS.')
   }
+  const unlocked = await clearReadOnlyIfExists(destPath)
+  if (!unlocked.ok) return unlocked
 
   if (streamsAborted(options)) {
     return err({ code: 'cancelled', message: 'Sync cancelled.' })
@@ -122,6 +125,21 @@ export async function copyStreams(
       return err({ code: 'cancelled', message: 'Sync cancelled.' })
     }
     const message = error instanceof Error ? error.message : String(error)
-    return ioError(`Failed to copy alternate streams: ${message}`)
+    const code =
+      error instanceof Error && 'code' in error ? String((error as { code?: string }).code) : ''
+    if (code === 'EPERM' || code === 'EACCES' || /read-only/i.test(message)) {
+      return permissionDeniedError('copy streams to', destPath, message)
+    }
+    if (code === 'ENOENT') {
+      return ioError('Alternate stream copy failed — source or destination was not found.', destPath)
+    }
+    if (code === 'EBUSY' || /locked|in use/i.test(message)) {
+      return err({
+        code: 'busy',
+        message: 'File is in use by another program.',
+        hint: `Close apps using "${destPath}" and retry sync.`,
+      })
+    }
+    return ioError(`Failed to copy alternate streams: ${plainIoMessage(error, 'Stream copy failed')}`, destPath)
   }
 }

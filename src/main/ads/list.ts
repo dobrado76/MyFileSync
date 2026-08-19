@@ -14,6 +14,22 @@ const FileStreamInfo = 7
 const ERROR_MORE_DATA = 234
 const ERROR_BAD_LENGTH = 24
 const INVALID_HANDLE_VALUE = 0xffffffffffffffffn
+const STREAM_INFO_INITIAL_BYTES = 65_536
+const STREAM_INFO_MAX_ATTEMPTS = 6
+
+/**
+ * One FileStreamInfo scratch buffer for the process. Grown if a file has an
+ * unusually large stream list; never shrunk. Safe on the serial compare path
+ * (and inside withNativeLock for the async IPC wrapper).
+ */
+let streamInfoBuffer = Buffer.allocUnsafe(STREAM_INFO_INITIAL_BYTES)
+
+function streamInfoScratch(minBytes: number): Buffer {
+  if (streamInfoBuffer.length < minBytes) {
+    streamInfoBuffer = Buffer.allocUnsafe(minBytes)
+  }
+  return streamInfoBuffer
+}
 
 const kernel32 = koffi.load('kernel32.dll')
 
@@ -53,21 +69,26 @@ function isInvalidHandle(handle: unknown): boolean {
  * FILE_READ_ATTRIBUTES only — never FILE_READ_DATA — so compare does not
  * read $DATA. Stream names/sizes come from NTFS MFT (FileStreamInfo).
  */
+export function listStreamsSync(hostPath: string): Result<AdsManifest> {
+  if (process.platform !== 'win32') {
+    return ioError('Alternate data streams are only supported on Windows.', 'Run on NTFS.')
+  }
+
+  try {
+    return ok(toAdsManifest(enumerateStreams(hostPath)))
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    return ioError(`Failed to list alternate streams: ${message}`)
+  }
+}
+
 export async function listStreams(hostPath: string): Promise<Result<AdsManifest>> {
   if (process.platform !== 'win32') {
     return ioError('Alternate data streams are only supported on Windows.', 'Run on NTFS.')
   }
 
   try {
-    return await withNativeLock(() => {
-      try {
-        const raw = enumerateStreams(hostPath)
-        return ok(toAdsManifest(raw))
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        return ioError(`Failed to list alternate streams: ${message}`)
-      }
-    })
+    return await withNativeLock(() => listStreamsSync(hostPath))
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     return ioError(`Failed to list alternate streams: ${message}`)
@@ -87,14 +108,14 @@ function enumerateStreams(hostPath: string): RawStream[] {
   if (isInvalidHandle(handle)) return []
 
   try {
-    let byteLength = 65_536
-    for (let attempt = 0; attempt < 6; attempt++) {
-      const buf = Buffer.alloc(byteLength)
-      const okCall = GetFileInformationByHandleEx(handle, FileStreamInfo, buf, byteLength)
+    let byteLength = streamInfoBuffer.length
+    for (let attempt = 0; attempt < STREAM_INFO_MAX_ATTEMPTS; attempt++) {
+      const buf = streamInfoScratch(byteLength)
+      const okCall = GetFileInformationByHandleEx(handle, FileStreamInfo, buf, buf.length)
       if (okCall) return parseStreamInfo(buf)
       const code = GetLastError()
       if (code === ERROR_MORE_DATA || code === ERROR_BAD_LENGTH) {
-        byteLength *= 2
+        byteLength = buf.length * 2
         continue
       }
       return []

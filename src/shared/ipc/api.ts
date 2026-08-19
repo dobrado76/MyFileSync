@@ -7,6 +7,7 @@ import type {
   CompareRow,
   CompareStats,
   FolderTreeNode,
+  SyncFailure,
   SyncProgress,
   SyncSummary,
 } from '../schemas/compare'
@@ -44,6 +45,14 @@ export type UpdateCheckResponse = {
 export type RunUpdateRequest = { installerPath: string }
 export type RunUpdateResponse = { launched: true }
 
+export type ShowItemInFolderRequest = { path: string }
+export type ShowItemInFolderResponse = { ok: true }
+export type OpenPathRequest = { path: string }
+export type OpenPathResponse = { ok: true }
+
+export type ClearReadOnlyRequest = { path: string }
+export type ClearReadOnlyResponse = { ok: true }
+
 export type AdsListRequest = { path: string }
 export type AdsListResponse = { path: string; manifest: AdsManifest }
 export type AdsCopyRequest = {
@@ -75,7 +84,15 @@ export type SyncEvent =
   | { type: 'compare:progress'; runId: string; done: number; total: number; currentPath?: string }
   | { type: 'compare:done'; runId: string; stats: CompareStats }
   | { type: 'sync:progress'; syncRunId: string; progress: SyncProgress }
-  | { type: 'sync:itemDone'; syncRunId: string; rowId: string; ok: boolean; error?: string }
+  | {
+      type: 'sync:itemDone'
+      syncRunId: string
+      rowId: string
+      ok: boolean
+      error?: string
+      hint?: string
+      code?: SyncFailure['code']
+    }
   | { type: 'sync:done'; syncRunId: string; summary: SyncSummary }
 
 export type MyFileSyncApi = {
@@ -85,6 +102,9 @@ export type MyFileSyncApi = {
   saveFile: (req?: SaveFileRequest) => Promise<Result<SaveFileResponse>>
   checkForUpdates: () => Promise<Result<UpdateCheckResponse>>
   runUpdate: (req: RunUpdateRequest) => Promise<Result<RunUpdateResponse>>
+  showItemInFolder: (req: ShowItemInFolderRequest) => Promise<Result<ShowItemInFolderResponse>>
+  openPath: (req: OpenPathRequest) => Promise<Result<OpenPathResponse>>
+  clearReadOnly: (req: ClearReadOnlyRequest) => Promise<Result<ClearReadOnlyResponse>>
   settingsGet: () => Promise<Result<Settings>>
   settingsSet: (partial: Partial<Settings>) => Promise<Result<Settings>>
   settingsExport: (req: { path: string }) => Promise<Result<{ path: string }>>
@@ -96,7 +116,11 @@ export type MyFileSyncApi = {
   jobImportJson: (req: { path: string }) => Promise<Result<{ id: string }>>
   jobImportIni: (req: { path: string }) => Promise<Result<{ id: string; warnings: string[] }>>
   jobImportFfs: (req: { path: string }) => Promise<Result<{ id: string; warnings: string[] }>>
-  compareRun: (req: { jobId: string; runId?: string }) => Promise<Result<CompareRunResponse>>
+  compareRun: (req: {
+    jobId: string
+    runId?: string
+    job?: JobFile
+  }) => Promise<Result<CompareRunResponse>>
   compareGetRows: (req: {
     runId: string
     offset: number
@@ -123,6 +147,7 @@ export type MyFileSyncApi = {
     jobId: string
     runId: string
     pathPrefix?: string
+    rowIds?: string[]
   }) => Promise<Result<SyncRunResponse>>
   syncCancel: (req?: { syncRunId?: string }) => Promise<Result<{ ok: true }>>
   syncGetProgress: (req: { syncRunId: string }) => Promise<Result<SyncProgress>>

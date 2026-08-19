@@ -20,8 +20,9 @@ npm run check        # all of the above
 ## Production build
 
 ```bash
-npm run build        # electron-vite → out/
-npm run dist         # build + electron-builder NSIS installer
+npm run build         # electron-vite → out/
+npm run dist          # bump patch (X.Y.Z → X.Y.Z+1), then installer
+npm run dist:nobump   # installer with the current package.json version
 ```
 
 `npm run dist` writes:
@@ -32,6 +33,8 @@ npm run dist         # build + electron-builder NSIS installer
 | Unpacked app | `release/win-unpacked/` |
 
 Example for v0.1: `release/MyFileSync-Setup-0.1.0.exe`
+
+After a successful build, older `MyFileSync-Setup-*.exe` (and matching `.blockmap`) files in `release/` are deleted so only the current version remains. Cleanup does not run if the build fails.
 
 ## Local updates workflow
 
@@ -45,8 +48,6 @@ Example for v0.1: `release/MyFileSync-Setup-0.1.0.exe`
 GitHub Actions on `windows-latest` runs `npm run check`. Tag-push installer attach is optional.
 ## Versioning
 
-Semantic versioning in `package.json`. Display uses short form where patch is zero (for example `0.1.0` → **v0.1**). Job schema `version` field is independent of app semver.
+Semantic versioning in `package.json`. `npm run dist` increments the patch (`Z`) before building so each installer is a new `MyFileSync-Setup-X.Y.Z.exe`. Use `npm run dist:nobump` to rebuild the same version. Display uses short form where patch is zero (for example `0.1.0` → **v0.1**). Job schema `version` field is independent of app semver.
 
-## Code signing
-
-Recommended for Windows SmartScreen; document in release checklist when applicable.
+Windows builds do **not** Authenticode-sign the exe or installer (`win.signExecutable: false`). Icon and version resources are still written.

@@ -1,5 +1,5 @@
 import { app, screen, type BrowserWindow } from 'electron'
-import fs from 'node:fs/promises'
+import fs from 'node:fs'
 import path from 'node:path'
 import { z } from 'zod'
 
@@ -25,6 +25,22 @@ function windowStatePath(): string {
   return path.join(app.getPath('userData'), 'window-state.json')
 }
 
+function roundState(input: {
+  x: number
+  y: number
+  width: number
+  height: number
+  isMaximized: boolean
+}): WindowState {
+  return windowStateSchema.parse({
+    x: Math.round(input.x),
+    y: Math.round(input.y),
+    width: Math.max(400, Math.round(input.width)),
+    height: Math.max(300, Math.round(input.height)),
+    isMaximized: input.isMaximized,
+  })
+}
+
 export function isWindowStateOnScreen(state: WindowState): boolean {
   const displays = screen.getAllDisplays()
   return displays.some((display) => {
@@ -38,33 +54,38 @@ export function isWindowStateOnScreen(state: WindowState): boolean {
   })
 }
 
-export async function loadWindowState(): Promise<WindowState | null> {
+export function loadWindowState(): WindowState | null {
   try {
-    const raw = await fs.readFile(windowStatePath(), 'utf8')
+    const raw = fs.readFileSync(windowStatePath(), 'utf8')
     return windowStateSchema.parse(JSON.parse(raw))
   } catch {
     return null
   }
 }
 
-export async function saveWindowState(window: BrowserWindow): Promise<void> {
-  if (window.isMinimized()) window.restore()
-
-  const isMaximized = window.isMaximized()
-  const bounds = isMaximized ? window.getNormalBounds() : window.getBounds()
-  const state = windowStateSchema.parse({
+export function captureWindowState(window: BrowserWindow, wasMaximized: boolean): WindowState | null {
+  if (window.isDestroyed()) return null
+  const bounds = window.getNormalBounds()
+  const isMaximized = window.isMaximized() || (window.isMinimized() && wasMaximized)
+  return roundState({
     x: bounds.x,
     y: bounds.y,
     width: bounds.width,
     height: bounds.height,
     isMaximized,
   })
-
-  await fs.mkdir(path.dirname(windowStatePath()), { recursive: true })
-  await fs.writeFile(windowStatePath(), `${JSON.stringify(state, null, 2)}\n`, 'utf8')
 }
 
-export function applyWindowState(window: BrowserWindow, state: WindowState): void {
+export function saveWindowState(window: BrowserWindow, wasMaximized = window.isMaximized()): void {
+  const state = captureWindowState(window, wasMaximized)
+  if (!state) return
+  const file = windowStatePath()
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(file, `${JSON.stringify(state, null, 2)}\n`, 'utf8')
+}
+
+/** Restored size only. Call maximize after show() or Windows drops it. */
+export function applyWindowBounds(window: BrowserWindow, state: WindowState): void {
   if (isWindowStateOnScreen(state)) {
     window.setBounds({
       x: state.x,
@@ -72,12 +93,31 @@ export function applyWindowState(window: BrowserWindow, state: WindowState): voi
       width: state.width,
       height: state.height,
     })
-  } else {
-    window.setSize(state.width, state.height)
-    window.center()
+    return
+  }
+  window.setSize(state.width, state.height)
+  window.center()
+}
+
+export function attachWindowStatePersistence(window: BrowserWindow, initial?: WindowState | null): void {
+  let maximized = initial?.isMaximized ?? window.isMaximized()
+  let timer: ReturnType<typeof setTimeout> | undefined
+
+  const persist = (): void => {
+    if (window.isDestroyed()) return
+    if (window.isMaximized()) maximized = true
+    else if (!window.isMinimized()) maximized = false
+    saveWindowState(window, maximized)
   }
 
-  if (state.isMaximized) {
-    window.maximize()
+  const persistSoon = (): void => {
+    if (timer) clearTimeout(timer)
+    timer = setTimeout(persist, 250)
   }
+
+  window.on('maximize', persist)
+  window.on('unmaximize', persist)
+  window.on('moved', persistSoon)
+  window.on('resized', persistSoon)
+  window.on('close', persist)
 }

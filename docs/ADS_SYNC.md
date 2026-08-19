@@ -140,7 +140,7 @@ When `writeCacheToAds` is false, known cache stream names are ignored so leftove
 
 Folders may carry ADS (folder statistics, etc.). Same manifest compare and `copyStreams` after directory create.
 
-**Read-only folder:** `FILE_ATTRIBUTE_READONLY` blocks stream writes on the directory object while children may still sync — detect and show plain error (see SECURITY.md / D11).
+**Read-only dest:** `FILE_ATTRIBUTE_READONLY` on the destination is cleared for the write, then dest is set to match the source (D22). It does not abort the sync.
 
 ## Preflight probe
 

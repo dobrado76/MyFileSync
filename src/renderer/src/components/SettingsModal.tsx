@@ -4,11 +4,13 @@ type SettingsModalProps = {
   open: boolean
   updatesFolder: string
   updatesStatus: string
+  hardwareAcceleration: boolean
   busy: boolean
   onClose: () => void
   onBrowseUpdatesFolder: () => void
   onUpdatesFolderChange: (path: string) => void
   onCheckForUpdates: () => void
+  onHardwareAccelerationChange: (enabled: boolean) => void
   onExportSettings: () => void
   onImportSettings: () => void
 }
@@ -17,11 +19,13 @@ export function SettingsModal({
   open,
   updatesFolder,
   updatesStatus,
+  hardwareAcceleration,
   busy,
   onClose,
   onBrowseUpdatesFolder,
   onUpdatesFolderChange,
   onCheckForUpdates,
+  onHardwareAccelerationChange,
   onExportSettings,
   onImportSettings,
 }: SettingsModalProps) {
@@ -46,10 +50,12 @@ export function SettingsModal({
           <SettingsPanel
             updatesFolder={updatesFolder}
             updatesStatus={updatesStatus}
+            hardwareAcceleration={hardwareAcceleration}
             busy={busy}
             onBrowseUpdatesFolder={onBrowseUpdatesFolder}
             onUpdatesFolderChange={onUpdatesFolderChange}
             onCheckForUpdates={onCheckForUpdates}
+            onHardwareAccelerationChange={onHardwareAccelerationChange}
             onExportSettings={onExportSettings}
             onImportSettings={onImportSettings}
           />

@@ -27,7 +27,7 @@ Job JSON stores paths as typed strings; validate on load with Zod.
 | **Mirror deletes** | Show delete count in confirm dialog when &gt; 0 |
 | **Permanent delete** | Confirm when multiple items or folder trees |
 | **Recycle Bin default** | D6 — `SHFileOperation` with `FOF_ALLOWUNDO` |
-| **Read-only target** | Detect `FILE_ATTRIBUTE_READONLY`; block with plain message |
+| **Read-only dest** | Clear dest `FILE_ATTRIBUTE_READONLY` for the write/delete, then match the source (D22). ACL permission denied still blocks with a plain message. |
 | **Same path guard** | Reject left === right after normalize |
 
 ## ADS-specific

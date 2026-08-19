@@ -35,11 +35,15 @@ export type DirEntry = {
   name: string
   isDir: boolean
   isSymlink: boolean
+  isReparse: boolean
   size: number
   mtimeMs: number
   atimeMs: number
   archive: boolean
 }
+
+/** One WIN32_FIND_DATAW for the process. Safe on the serial compare walk. */
+const findDataScratch = koffi.alloc(WIN32_FIND_DATAW, 1)
 
 function isInvalidHandle(handle: unknown): boolean {
   if (handle === null || handle === undefined || handle === 0 || handle === false) return true
@@ -99,6 +103,7 @@ function decodeEntry(raw: RawFind): DirEntry | undefined {
     name,
     isDir,
     isSymlink,
+    isReparse,
     size,
     mtimeMs: fileTimeToMs(raw.ftLastWriteTimeLow, raw.ftLastWriteTimeHigh),
     atimeMs: fileTimeToMs(raw.ftLastAccessTimeLow, raw.ftLastAccessTimeHigh),
@@ -112,7 +117,7 @@ function decodeEntry(raw: RawFind): DirEntry | undefined {
  */
 export function readDirectoryWin32(absDir: string): Map<string, DirEntry> {
   const entries = new Map<string, DirEntry>()
-  const data = koffi.alloc(WIN32_FIND_DATAW, 1)
+  const data = findDataScratch
   const handle = FindFirstFileW(searchGlob(absDir), data)
   if (isInvalidHandle(handle)) return entries
 

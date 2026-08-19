@@ -2,15 +2,15 @@
 
 FreeFileSync-inspired **compare-first** layout with modern Electron chrome (dark/light).
 
-The workbench uses a **header toolbar** (job picker, Compare / Sync / Cancel) and tabs: **Options | Compare | Filters | Log**. Settings live in a header modal, not on the main surface.
+The workbench uses a **title bar** (Job picker + New, Settings) and a **job toolbar** (name, Import / Save / Delete / Clear) with tabs: **Options | Compare | Filters | Log**. Settings live in a header modal, not on the main surface.
 
 ## Layout
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ MyFileSync          [Settings]                              │
+│ MyFileSync          Job ▾  [+ New]            [Settings]    │
 ├─────────────────────────────────────────────────────────────┤
-│ Job ▾  Name  [+ New] [Import…] [Save] [Delete]  [Clear]     │
+│ Name  [Import…] [Save] [Delete] [Clear]                     │
 │ Options | Compare | Filters | Log                           │
 ├─────────────────────────────────────────────────────────────┤
 │ Source folder     [Mirror ▾] [Size+time ▾]   Target folder  │
@@ -29,31 +29,41 @@ The workbench uses a **header toolbar** (job picker, Compare / Sync / Cancel) an
 
 ## Regions
 
+### Title bar
+
+- App name and version on the left; **Job** dropdown and **+ New** centered; Settings on the right.
+
 ### Jobs (toolbar)
 
-- Job dropdown, name field, + New, **Import…** (FreeFileSync `.ffs_gui` / `.ffs_batch`, INI, JSON), Save, Delete, Clear.
+- Name field, **Import…** (FreeFileSync `.ffs_gui` / `.ffs_batch`, INI, JSON), Save, Delete, Clear.
 
 ### Folder pairs (Options tab)
 
-All pairs are stacked and visible at once (FreeFileSync-style) — not a dropdown. Column headers once: **Source folder** | variant + compare method | **Target folder**. Each row is `[left path] […]` `⇄` `[right path] […]` then ↑ ↓ ×. Path fields are normal text: type, copy, paste, or Browse (**…**). **+ Add folder pair** sits under the list. A **horizontal splitter** under the pair panel resizes how much of the list is shown; the list scrollbar appears only when pairs overflow that height. Compare/Sync always run every enabled pair; the tree root is **All folders** when there is more than one pair.
+All pairs are stacked and visible at once (FreeFileSync-style) — not a dropdown. Column headers once: **Source folder** | variant + compare method | **Target folder**. Each row is a **checkbox** (include in Compare/Sync) then `[left path] […]` `⇄` `[right path] […]` then ↑ ↓ ×. The checkbox is `pairs[].enabled` in the job file — keep every pair in one job and tick only the ones to run. Path fields are normal text: type, copy, paste, or Browse (**…**). **+ Add folder pair** sits under the list. A **horizontal splitter** under the pair panel resizes how much of the list is shown; the list scrollbar appears only when pairs overflow that height. That height is stored on the job (`ui.pairListHeight`) so it comes back after you switch tabs or reopen the job. Compare/Sync run every **enabled** pair; the tree root is **All folders** when more than one pair is enabled.
 
 ### Options tab
 
-Compare method, ADS cache, Recycle Bin, workers, watch, variant. Filters have their own tab (pattern vs this path).
+Folder pairs and variant. Filters have their own tab (pattern vs this path).
+
+### Compare tab (job settings)
+
+Compare method, ADS cache, Recycle Bin, workers, watch. A **Search settings** box at the top filters as you type (debounced; every word must match).
 
 ### Compare results
 
 Filter bar (All | Differences | Source only | Target only | Deleted | Moved | ADS ≠) sits above a **split**:
 
-- **Folder tree (left)** — built from the change list after Compare (not a second disk walk). Folder names use normal text; the count is items in that branch. After every Compare, **only the root is expanded** (nested folders stay collapsed until you open a twistie). Click a folder to show only that branch in the grid. Right-click a folder:
+- **Folder tree (left)** — built from the change list after Compare (not a second disk walk). Classic tree chrome: dotted guides, folder icons, boxed +/−. The count is items in that branch. After every Compare, **only the root is expanded** (nested folders stay collapsed until you open a twistie). Click a folder to show only that branch in the grid. Right-click a folder:
 
+  - **Open source / Open target** — Windows default app for that file or folder.
+  - **Reveal source / Reveal target** — open the parent folder and select the item (`mfe://reveal`) so you can inspect before Sync (especially Deletes).
   - **Exclude this folder permanently** — add a path filter (`/name` or `parent/name`) and remove it from this compare.
   - **Exclude folders named “X” permanently** — add a name filter (any depth) and remove matching items from this compare.
   - **Exclude this folder from this compare** — hide it for this run only (next Compare brings it back).
   - **Sync this folder now** — run only that branch, then drop succeeded items from the tree.
-- **Change list (right)** — two-pane Source / Action / Target grid.
+- **Change list (right)** — two-pane Source / Action / Target grid. Rows are virtualized (only the visible window is in the DOM). Right-click a row for the same Open and Reveal actions (source and/or target, whichever still exists).
 
-The tree only contains folders that have diffs (equals are counted, not stored). A collapsed missing-side folder is one node. Moves appear under both the old and new folders.
+The tree only contains folders that have remaining diffs (equals are counted, not stored). Pair roots and folders with no changes are omitted — they disappear after **Sync this folder now** or a full Sync once that branch is empty. A collapsed missing-side folder is one node. Moves appear under both the old and new folders.
 
 **Row colors** (CSS variables, dark-mode safe):
 
@@ -84,15 +94,17 @@ Double-click row → modal **Action detail** (BackupMirror `ShowAction` revival)
 ### Settings tab
 
 - Theme, default parallelism, default delete policy, log retention.
+- **Hardware acceleration (GPU)** — on by default. Turn off if the window flickers or stays blank; restart to apply.
 - Export/import app settings (excludes window geometry).
 
 ## Primary actions
 
 | Button | Shortcut | Behavior |
 |--------|----------|----------|
+| Save | Ctrl+S | Write the current job to disk |
 | Compare | F5 | Run compare for active job |
-| Sync | Ctrl+S | Execute included actions (confirm if deletes &gt; 0) |
-| Cancel | Esc | Abort long compare/sync |
+| Sync | | Execute included actions (confirm if deletes &gt; 0) |
+| Cancel | Esc | Stop compare or sync. Compare keeps diffs already found. Sync drops items that already succeeded so the next Sync is a resume. |
 
 ## Progress / status bar
 

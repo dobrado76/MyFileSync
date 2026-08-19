@@ -6,15 +6,17 @@ type FilterManagerProps = {
   hint: string
   rules: string[]
   pairRoots: string[]
+  disabled?: boolean
   onChange: (rules: string[]) => void
 }
 
-export function FilterManager({ title, hint, rules, pairRoots, onChange }: FilterManagerProps) {
+export function FilterManager({ title, hint, rules, pairRoots, disabled = false, onChange }: FilterManagerProps) {
   const [patternDraft, setPatternDraft] = useState('')
   const [pickError, setPickError] = useState<string | null>(null)
   const canPick = pairRoots.some((root) => root.trim().length > 0)
 
   function addRule(value: string): void {
+    if (disabled) return
     const next = value.trim()
     if (!next) return
     if (rules.includes(next)) return
@@ -57,6 +59,7 @@ export function FilterManager({ title, hint, rules, pairRoots, onChange }: Filte
   }
 
   function removeAt(index: number): void {
+    if (disabled) return
     onChange(rules.filter((_, i) => i !== index))
   }
 
@@ -90,6 +93,7 @@ export function FilterManager({ title, hint, rules, pairRoots, onChange }: Filte
                     type="button"
                     className="button button-sm"
                     title="Remove this rule"
+                    disabled={disabled}
                     onClick={() => removeAt(index)}
                   >
                     Remove
@@ -104,6 +108,7 @@ export function FilterManager({ title, hint, rules, pairRoots, onChange }: Filte
       <div className="filter-add-row">
         <input
           className="settings-input"
+          disabled={disabled}
           value={patternDraft}
           placeholder="All instances — e.g. !Thumbnails  or  *.tmp  or  **/.git/**"
           onChange={(e) => setPatternDraft(e.target.value)}
@@ -114,13 +119,13 @@ export function FilterManager({ title, hint, rules, pairRoots, onChange }: Filte
             }
           }}
         />
-        <button type="button" className="button" onClick={addPattern}>
+        <button type="button" className="button" disabled={disabled} onClick={addPattern}>
           Add pattern
         </button>
-        <button type="button" className="button" disabled={!canPick} onClick={() => void addPicked('folder')}>
+        <button type="button" className="button" disabled={disabled || !canPick} onClick={() => void addPicked('folder')}>
           This folder…
         </button>
-        <button type="button" className="button" disabled={!canPick} onClick={() => void addPicked('file')}>
+        <button type="button" className="button" disabled={disabled || !canPick} onClick={() => void addPicked('file')}>
           This file…
         </button>
       </div>

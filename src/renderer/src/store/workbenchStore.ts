@@ -1,8 +1,9 @@
 import { create } from 'zustand'
 import { createDefaultJob, type JobFile, type JobSummary } from '@shared/schemas/job'
-import type { CompareFilter, CompareRow, CompareStats, FolderTreeNode, SyncProgress } from '@shared/schemas/compare'
+import type { CompareFilter, CompareRow, CompareStats, FolderTreeNode, SyncFailure, SyncProgress } from '@shared/schemas/compare'
 import type { SyncEvent } from '@shared/ipc/api'
 import { formatDisplayVersion } from '@shared/version'
+import { parsePairTreePath } from '@shared/compare/folderTree'
 import { excludeFolderNameRule, excludeThisFolderRule } from '@shared/compare/filters'
 import type { MainTab } from '../components/BackupMirrorWorkbench'
 import type { TreeFolderAction } from '../components/CompareFolderTree'
@@ -28,26 +29,94 @@ function formatSyncStatus(progress: SyncProgress): string {
   return path ? `${verb} ${counts} · ${path}` : `${verb} ${counts}`
 }
 
+export function isJobConfigLocked(compareBusy: boolean, syncBusy: boolean): boolean {
+  return compareBusy || syncBusy
+}
+
+/** @deprecated use isJobConfigLocked */
+export function isJobSwitchLocked(compareBusy: boolean, syncBusy: boolean): boolean {
+  return isJobConfigLocked(compareBusy, syncBusy)
+}
+
+const JOB_CONFIG_LOCKED_HINT = 'Finish or cancel compare/sync before changing the job.'
+
+async function persistActiveJobQuiet(
+  getState: () => { activeJob: JobFile | null },
+  setState: (partial: { statusText: string }) => void,
+): Promise<boolean> {
+  const job = getState().activeJob
+  if (!job) return false
+  const saved = await window.myFileSync.jobSave({ job })
+  if (!saved.ok) {
+    setState({ statusText: saved.error.message })
+    return false
+  }
+  return true
+}
+
+let syncDoneResolve: ((summary: import('@shared/schemas/compare').SyncSummary) => void) | null = null
+
+function waitForSyncDone(): Promise<import('@shared/schemas/compare').SyncSummary> {
+  return new Promise((resolve) => {
+    syncDoneResolve = resolve
+  })
+}
+
+function mergeRetriedFailures(
+  current: SyncFailure[],
+  retriedRowIds: readonly string[],
+  summary: import('@shared/schemas/compare').SyncSummary,
+): SyncFailure[] {
+  const failedByRow = new Map(summary.failures.map((f) => [f.rowId, f]))
+  let next = [...current]
+  for (const rowId of retriedRowIds) {
+    const stillFailed = failedByRow.get(rowId)
+    if (stillFailed) {
+      const idx = next.findIndex((f) => f.rowId === rowId)
+      if (idx >= 0) next[idx] = stillFailed
+      else next.push(stillFailed)
+    } else {
+      next = next.filter((f) => f.rowId !== rowId)
+    }
+  }
+  return next
+}
+
 const EMPTY_COMPARE_VIEW = {
   compareRows: [] as CompareRow[],
+  compareRowOffset: 0,
+  compareRowTotal: 0,
   compareFolderTree: null as FolderTreeNode | null,
   comparePathPrefix: '',
   selectedRow: null as CompareRow | null,
 }
 
+const GRID_WINDOW = 80
+
 async function loadCompareRows(
   runId: string,
   filter: CompareFilter,
   pathPrefix: string,
-): Promise<CompareRow[]> {
-  const rows = await window.myFileSync.compareGetRows({
+  offset = 0,
+  limit = GRID_WINDOW,
+): Promise<{ rows: CompareRow[]; total: number; offset: number }> {
+  const page = await window.myFileSync.compareGetRows({
     runId,
-    offset: 0,
-    limit: 5000,
+    offset,
+    limit: Math.min(5000, Math.max(20, limit)),
     filter,
     pathPrefix,
   })
-  return rows.ok ? rows.value.rows : []
+  if (!page.ok) return { rows: [], total: 0, offset }
+  return { rows: page.value.rows, total: page.value.total, offset }
+}
+
+function comparePagePatch(page: { rows: CompareRow[]; total: number; offset: number }) {
+  return {
+    compareRows: page.rows,
+    compareRowOffset: page.offset,
+    compareRowTotal: page.total,
+  }
 }
 
 async function loadCompareTree(runId: string, filter: CompareFilter): Promise<FolderTreeNode | null> {
@@ -66,6 +135,8 @@ type WorkbenchState = {
   compareRunId: string | null
   compareStats: CompareStats | null
   compareRows: CompareRow[]
+  compareRowOffset: number
+  compareRowTotal: number
   compareFolderTree: FolderTreeNode | null
   comparePathPrefix: string
   compareFilter: CompareFilter
@@ -80,6 +151,7 @@ type WorkbenchState = {
   pendingSyncDeletes: number
   updatesFolder: string
   updatesStatus: string
+  hardwareAcceleration: boolean
   pendingUpdate: { latestVersion: string; installerPath: string; currentVersion: string } | null
   updateDismissed: boolean
   selectedRow: import('@shared/schemas/compare').CompareRow | null
@@ -87,6 +159,13 @@ type WorkbenchState = {
   compareCancelled: boolean
   syncCancelling: boolean
   busy: boolean
+  syncFailures: SyncFailure[]
+  showSyncFailures: boolean
+  syncSucceededCount: number
+  syncQueued: boolean
+  failureFixRowId: string | null
+  failureFixStatus: string | null
+  partialRetryRowIds: string[] | null
 
   init: () => Promise<void>
   refreshJobs: () => Promise<void>
@@ -106,6 +185,8 @@ type WorkbenchState = {
   movePair: (index: number, direction: -1 | 1) => void
   flipPair: (index: number) => void
   setPairPath: (index: number, side: 'left' | 'right', path: string) => void
+  setPairEnabled: (index: number, enabled: boolean) => void
+  setPairListHeight: (height: number, persist?: boolean) => void
   clearCompareList: () => void
   browsePairPath: (index: number, side: 'left' | 'right') => Promise<void>
   cancelOperation: () => Promise<void>
@@ -113,12 +194,15 @@ type WorkbenchState = {
   runSync: () => Promise<void>
   confirmSync: () => Promise<void>
   cancelSyncConfirm: () => void
+  startSyncIfQueued: (stats: CompareStats) => Promise<void>
   setCompareFilter: (filter: CompareFilter) => Promise<void>
   selectCompareFolder: (pathPrefix: string) => Promise<void>
+  loadCompareWindow: (offset: number, limit: number) => Promise<void>
   handleFolderAction: (action: TreeFolderAction, path: string, deletes: number) => Promise<void>
   toggleRowIncluded: (rowId: string, included: boolean) => Promise<void>
   browseUpdatesFolder: () => Promise<void>
   setUpdatesFolder: (path: string) => void
+  setHardwareAcceleration: (enabled: boolean) => void
   checkForUpdates: () => Promise<void>
   runUpdate: () => Promise<void>
   dismissUpdate: () => void
@@ -128,6 +212,14 @@ type WorkbenchState = {
   openSettings: () => void
   closeSettings: () => void
   handleSyncEvent: (event: SyncEvent) => void
+  dismissSyncFailures: () => void
+  retryFailedSync: () => Promise<void>
+  retrySyncRows: (rowIds: string[]) => Promise<void>
+  viewSyncErrorsInGrid: () => Promise<void>
+  showFailureInFolder: (path: string) => Promise<void>
+  openDiskPath: (path: string) => Promise<void>
+  revealDiskPath: (path: string) => Promise<void>
+  clearFailureReadOnly: (failure: SyncFailure) => Promise<void>
 }
 
 export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
@@ -141,6 +233,8 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   compareRunId: null,
   compareStats: null,
   compareRows: [],
+  compareRowOffset: 0,
+  compareRowTotal: 0,
   compareFolderTree: null,
   comparePathPrefix: '',
   compareFilter: 'all',
@@ -155,6 +249,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   pendingSyncDeletes: 0,
   updatesFolder: '',
   updatesStatus: '',
+  hardwareAcceleration: true,
   pendingUpdate: null,
   updateDismissed: false,
   selectedRow: null,
@@ -162,6 +257,13 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   compareCancelled: false,
   syncCancelling: false,
   busy: false,
+  syncFailures: [],
+  showSyncFailures: false,
+  syncSucceededCount: 0,
+  syncQueued: false,
+  failureFixRowId: null,
+  failureFixStatus: null,
+  partialRetryRowIds: null,
 
   init: async () => {
     const ready = await window.myFileSync.ready()
@@ -172,11 +274,13 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
 
     const settings = await window.myFileSync.settingsGet()
     const updatesFolder = settings.ok ? settings.value.updatesFolder : ''
+    const hardwareAcceleration = settings.ok ? settings.value.hardwareAcceleration : true
 
     set({
       initialized: true,
       appVersion: ready.value.version,
       updatesFolder,
+      hardwareAcceleration,
       statusText: `Ready · ${formatDisplayVersion(ready.value.version)}`,
     })
 
@@ -187,25 +291,43 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     const result = await window.myFileSync.jobList()
     if (!result.ok) return
     set({ jobs: result.value.jobs })
-    if (!get().activeJobId && result.value.jobs[0]) {
-      await get().selectJob(result.value.jobs[0].id)
-    }
+    if (get().activeJobId) return
+
+    const settings = await window.myFileSync.settingsGet()
+    const preferred = settings.ok ? settings.value.lastJobId : undefined
+    const jobs = result.value.jobs
+    const target =
+      (preferred && jobs.some((job) => job.id === preferred) ? preferred : undefined) ?? jobs[0]?.id
+    if (target) await get().selectJob(target)
   },
 
   selectJob: async (id) => {
+    if (isJobConfigLocked(get().compareBusy, get().syncBusy)) {
+      set({ statusText: JOB_CONFIG_LOCKED_HINT })
+      return
+    }
+    if (get().activeJobId === id) return
     const result = await window.myFileSync.jobGet({ id })
     if (!result.ok) return
+    void window.myFileSync.settingsSet({ lastJobId: id })
     set({
       activeJobId: id,
       activeJob: result.value.job,
       activePairIndex: 0,
       compareRunId: null,
       compareStats: null,
+      compareFilter: 'all',
+      syncFailures: [],
+      showSyncFailures: false,
       ...EMPTY_COMPARE_VIEW,
     })
   },
 
   newJob: async () => {
+    if (isJobConfigLocked(get().compareBusy, get().syncBusy)) {
+      set({ statusText: JOB_CONFIG_LOCKED_HINT })
+      return
+    }
     const job = createDefaultJob()
     const saved = await window.myFileSync.jobSave({ job })
     if (!saved.ok) {
@@ -218,6 +340,10 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   },
 
   saveActiveJob: async () => {
+    if (isJobConfigLocked(get().compareBusy, get().syncBusy)) {
+      set({ statusText: JOB_CONFIG_LOCKED_HINT })
+      return
+    }
     const { activeJob } = get()
     if (!activeJob) return
     set({ busy: true })
@@ -232,6 +358,10 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   },
 
   deleteActiveJob: async () => {
+    if (isJobConfigLocked(get().compareBusy, get().syncBusy)) {
+      set({ statusText: JOB_CONFIG_LOCKED_HINT })
+      return
+    }
     const { activeJobId, activeJob } = get()
     if (!activeJobId || !activeJob) return
     const name = activeJob.name
@@ -254,6 +384,10 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   },
 
   importIni: async () => {
+    if (isJobConfigLocked(get().compareBusy, get().syncBusy)) {
+      set({ statusText: JOB_CONFIG_LOCKED_HINT })
+      return
+    }
     const picked = await window.myFileSync.pickFile({
       title: 'Import BackupMirror INI',
       filters: [{ name: 'INI', extensions: ['ini'] }],
@@ -263,6 +397,10 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   },
 
   importJobFile: async () => {
+    if (isJobConfigLocked(get().compareBusy, get().syncBusy)) {
+      set({ statusText: JOB_CONFIG_LOCKED_HINT })
+      return
+    }
     const picked = await window.myFileSync.pickFile({
       title: 'Import job',
       filters: [
@@ -282,6 +420,10 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   },
 
   finishImport: async (filePath: string, kind: 'ffs' | 'ini' | 'json') => {
+    if (isJobConfigLocked(get().compareBusy, get().syncBusy)) {
+      set({ statusText: JOB_CONFIG_LOCKED_HINT })
+      return
+    }
     let id: string
     let warnings: string[] = []
     if (kind === 'json') {
@@ -337,6 +479,10 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   },
 
   loadJobFile: async () => {
+    if (isJobConfigLocked(get().compareBusy, get().syncBusy)) {
+      set({ statusText: JOB_CONFIG_LOCKED_HINT })
+      return
+    }
     const picked = await window.myFileSync.pickFile({
       title: 'Load job',
       filters: [{ name: 'MyFileSync job', extensions: ['json'] }],
@@ -353,6 +499,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   },
 
   updateActiveJob: (patch) => {
+    if (isJobConfigLocked(get().compareBusy, get().syncBusy)) return
     const job = get().activeJob
     if (!job) return
     set({ activeJob: { ...job, ...patch } })
@@ -363,6 +510,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   setActivePairIndex: (index) => set({ activePairIndex: index }),
 
   addPair: () => {
+    if (isJobConfigLocked(get().compareBusy, get().syncBusy)) return
     const job = get().activeJob
     if (!job) return
     set({
@@ -378,6 +526,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   },
 
   removePair: (index) => {
+    if (isJobConfigLocked(get().compareBusy, get().syncBusy)) return
     const { activeJob, activePairIndex } = get()
     if (!activeJob || activeJob.pairs.length <= 1) return
     const pairs = activeJob.pairs.filter((_, i) => i !== index)
@@ -394,6 +543,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   },
 
   movePair: (index, direction) => {
+    if (isJobConfigLocked(get().compareBusy, get().syncBusy)) return
     const { activeJob } = get()
     if (!activeJob) return
     const dest = index + direction
@@ -406,6 +556,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   },
 
   flipPair: (index) => {
+    if (isJobConfigLocked(get().compareBusy, get().syncBusy)) return
     const { activeJob } = get()
     if (!activeJob) return
     const pair = activeJob.pairs[index]
@@ -420,6 +571,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   },
 
   setPairPath: (index, side, path) => {
+    if (isJobConfigLocked(get().compareBusy, get().syncBusy)) return
     const { activeJob } = get()
     if (!activeJob || !activeJob.pairs[index]) return
     set({
@@ -431,6 +583,36 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     })
   },
 
+  setPairEnabled: (index, enabled) => {
+    if (isJobConfigLocked(get().compareBusy, get().syncBusy)) return
+    const { activeJob } = get()
+    if (!activeJob || !activeJob.pairs[index]) return
+    set({
+      activeJob: {
+        ...activeJob,
+        pairs: activeJob.pairs.map((p, i) => (i === index ? { ...p, enabled } : p)),
+      },
+      activePairIndex: index,
+    })
+    void persistActiveJobQuiet(get, set)
+  },
+
+  setPairListHeight: (height, persist = false) => {
+    const { activeJob } = get()
+    if (!activeJob) return
+    const pairListHeight = Math.round(Math.min(4000, Math.max(40, height)))
+    if (activeJob.ui?.pairListHeight !== pairListHeight) {
+      set({
+        activeJob: {
+          ...activeJob,
+          ui: { ...activeJob.ui, pairListHeight },
+        },
+      })
+    }
+    if (!persist) return
+    void persistActiveJobQuiet(get, set)
+  },
+
   clearCompareList: () =>
     set({
       compareRunId: null,
@@ -440,6 +622,10 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     }),
 
   browsePairPath: async (index, side) => {
+    if (isJobConfigLocked(get().compareBusy, get().syncBusy)) {
+      set({ statusText: JOB_CONFIG_LOCKED_HINT })
+      return
+    }
     const { activeJob } = get()
     const pair = activeJob?.pairs[index]
     if (!pair) return
@@ -459,7 +645,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   cancelOperation: async () => {
     const { compareRunId, syncRunId, compareBusy, syncBusy } = get()
     if (compareBusy) {
-      set({ compareCancelled: true, statusText: 'Cancelling compare…' })
+      set({ compareCancelled: true, syncQueued: false, statusText: 'Cancelling compare…' })
       await window.myFileSync.compareCancel({ runId: compareRunId ?? undefined })
     }
     if (syncBusy) {
@@ -471,46 +657,56 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   runCompare: async () => {
     const { activeJobId, activeJob } = get()
     if (!activeJobId || !activeJob) return
+    if (!activeJob.pairs.some((p) => p.enabled)) {
+      set({ statusText: 'Enable at least one folder pair.' })
+      return
+    }
+    const saved = await persistActiveJobQuiet(get, set)
+    if (!saved) return
+    const job = get().activeJob ?? activeJob
     const runId = crypto.randomUUID()
     set({
       compareBusy: true,
       compareCancelled: false,
       compareRunId: runId,
       compareStats: null,
+      syncFailures: [],
+      showSyncFailures: false,
+      syncQueued: false,
+      compareFilter: 'all',
       ...EMPTY_COMPARE_VIEW,
       statusText: 'Comparing…',
     })
     try {
-      await get().saveActiveJob()
       if (get().compareCancelled) {
         set({ statusText: 'Compare cancelled.' })
         return
       }
-      const result = await window.myFileSync.compareRun({ jobId: activeJobId, runId })
-      if (get().compareCancelled || (result.ok && result.value.cancelled)) {
-        set({ statusText: 'Compare cancelled.', compareStats: null, ...EMPTY_COMPARE_VIEW })
-        return
-      }
+      const result = await window.myFileSync.compareRun({ jobId: activeJobId, runId, job })
       if (!result.ok) {
-        set({ statusText: result.error.message })
+        set({ statusText: result.error.message, syncQueued: false })
         return
       }
-      const filter = get().compareFilter
-      const [compareRows, compareFolderTree] = await Promise.all([
-        loadCompareRows(result.value.runId, filter, ''),
-        loadCompareTree(result.value.runId, filter),
+      const cancelled = get().compareCancelled || result.value.cancelled
+      const [page, compareFolderTree] = await Promise.all([
+        loadCompareRows(result.value.runId, 'all', ''),
+        loadCompareTree(result.value.runId, 'all'),
       ])
+      const summary = formatCompareStatus(result.value.stats)
       set({
         compareRunId: result.value.runId,
         compareStats: result.value.stats,
-        compareRows,
+        ...comparePagePatch(page),
         compareFolderTree,
         comparePathPrefix: '',
-        statusText: formatCompareStatus(result.value.stats),
+        syncQueued: false,
+        statusText: cancelled ? `Compare cancelled · ${summary}` : summary,
       })
+      if (!cancelled) await get().startSyncIfQueued(result.value.stats)
     } catch (error) {
       set({
         statusText: error instanceof Error ? error.message : 'Compare failed unexpectedly.',
+        syncQueued: false,
       })
     } finally {
       set({ compareBusy: false })
@@ -518,6 +714,19 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   },
 
   runSync: async () => {
+    if (get().syncBusy) return
+
+    if (get().compareBusy) {
+      const queued = !get().syncQueued
+      set({
+        syncQueued: queued,
+        statusText: queued
+          ? `${get().statusText.replace(/ · Sync queued$/, '')} · Sync queued`
+          : get().statusText.replace(/ · Sync queued$/, ''),
+      })
+      return
+    }
+
     const deletes = get().compareStats?.deletes ?? 0
     set({ pendingSyncPrefix: '', pendingSyncDeletes: deletes })
     if (deletes > 0) {
@@ -527,10 +736,21 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     await get().confirmSync()
   },
 
+  startSyncIfQueued: async (stats) => {
+    if (!get().syncQueued) return
+    set({
+      syncQueued: false,
+      pendingSyncPrefix: '',
+      pendingSyncDeletes: stats.deletes ?? 0,
+      showDeleteConfirm: false,
+    })
+    await get().confirmSync()
+  },
+
   confirmSync: async () => {
     const { activeJobId, compareRunId, pendingSyncPrefix } = get()
     if (!activeJobId || !compareRunId) return
-    set({ showDeleteConfirm: false, syncBusy: true, syncCancelling: false, statusText: 'Syncing…' })
+    set({ showDeleteConfirm: false, syncBusy: true, syncCancelling: false, showSyncFailures: false, statusText: 'Syncing…' })
     const result = await window.myFileSync.syncRun({
       jobId: activeJobId,
       runId: compareRunId,
@@ -543,25 +763,40 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     }
   },
 
-  cancelSyncConfirm: () => set({ showDeleteConfirm: false, pendingSyncPrefix: '', pendingSyncDeletes: 0 }),
+  cancelSyncConfirm: () =>
+    set({ showDeleteConfirm: false, pendingSyncPrefix: '', pendingSyncDeletes: 0, syncQueued: false }),
 
   setCompareFilter: async (filter) => {
     set({ compareFilter: filter })
     const { compareRunId, comparePathPrefix } = get()
     if (!compareRunId) return
-    const [compareRows, compareFolderTree] = await Promise.all([
+    const [page, compareFolderTree] = await Promise.all([
       loadCompareRows(compareRunId, filter, comparePathPrefix),
       loadCompareTree(compareRunId, filter),
     ])
-    set({ compareRows, compareFolderTree })
+    set({ ...comparePagePatch(page), compareFolderTree })
   },
 
   selectCompareFolder: async (pathPrefix) => {
     set({ comparePathPrefix: pathPrefix, selectedRow: null })
     const { compareRunId, compareFilter } = get()
     if (!compareRunId) return
-    const compareRows = await loadCompareRows(compareRunId, compareFilter, pathPrefix)
-    set({ compareRows })
+    const page = await loadCompareRows(compareRunId, compareFilter, pathPrefix)
+    set(comparePagePatch(page))
+  },
+
+  loadCompareWindow: async (offset, limit) => {
+    const { compareRunId, compareFilter, comparePathPrefix } = get()
+    if (!compareRunId) return
+    const page = await loadCompareRows(compareRunId, compareFilter, comparePathPrefix, offset, limit)
+    if (
+      get().compareRunId !== compareRunId ||
+      get().compareFilter !== compareFilter ||
+      get().comparePathPrefix !== comparePathPrefix
+    ) {
+      return
+    }
+    set(comparePagePatch(page))
   },
 
   handleFolderAction: async (action, path, deletes) => {
@@ -570,12 +805,12 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
 
     async function refreshAfterDrop(nextPrefix: string, stats?: CompareStats): Promise<void> {
       const { compareFilter } = get()
-      const [compareRows, compareFolderTree] = await Promise.all([
+      const [page, compareFolderTree] = await Promise.all([
         loadCompareRows(compareRunId!, compareFilter, nextPrefix),
         loadCompareTree(compareRunId!, compareFilter),
       ])
       set({
-        compareRows,
+        ...comparePagePatch(page),
         compareFolderTree,
         comparePathPrefix: nextPrefix,
         selectedRow: null,
@@ -596,8 +831,11 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
 
     if (action === 'excludePath' || action === 'excludeName') {
       if (!activeJob) return
+      const relFolder = parsePairTreePath(path).relPath
       const rule =
-        action === 'excludePath' ? excludeThisFolderRule(path) : excludeFolderNameRule(path)
+        action === 'excludePath'
+          ? excludeThisFolderRule(relFolder)
+          : excludeFolderNameRule(relFolder || path)
       if (!rule) return
       if (!activeJob.filters.exclude.includes(rule)) {
         get().updateActiveJob({
@@ -666,6 +904,11 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     void window.myFileSync.settingsSet({ updatesFolder: path })
   },
 
+  setHardwareAcceleration: (enabled) => {
+    set({ hardwareAcceleration: enabled })
+    void window.myFileSync.settingsSet({ hardwareAcceleration: enabled })
+  },
+
   checkForUpdates: async () => {
     const { updatesFolder } = get()
     if (!updatesFolder) {
@@ -727,7 +970,11 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     if (!picked.ok || !picked.value.path) return
     const result = await window.myFileSync.settingsImport({ path: picked.value.path })
     if (result.ok) {
-      set({ updatesFolder: result.value.updatesFolder, statusText: 'Settings imported.' })
+      set({
+        updatesFolder: result.value.updatesFolder,
+        hardwareAcceleration: result.value.hardwareAcceleration,
+        statusText: 'Settings imported. Restart MyFileSync if the GPU setting changed.',
+      })
     }
   },
 
@@ -745,25 +992,105 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       })
     }
     if (event.type === 'sync:done') {
+      if (syncDoneResolve) {
+        syncDoneResolve(event.summary)
+        syncDoneResolve = null
+      }
+
+      const partial = get().partialRetryRowIds
+      if (partial && partial.length > 0) {
+        const pathsBefore = new Map(get().syncFailures.map((f) => [f.rowId, f.relPath]))
+        const nextFailures = mergeRetriedFailures(get().syncFailures, partial, event.summary)
+        const fixed = partial.filter((rowId) => !event.summary.failures.some((f) => f.rowId === rowId))
+        const fixedLabel =
+          fixed.length === 1 ? (pathsBefore.get(fixed[0]!) ?? fixed[0]) : `${event.summary.succeeded} items`
+        const { compareRunId, compareFilter, comparePathPrefix } = get()
+        set({
+          syncBusy: false,
+          busy: false,
+          partialRetryRowIds: null,
+          failureFixRowId: null,
+          failureFixStatus: null,
+          syncFailures: nextFailures,
+          showSyncFailures: nextFailures.length > 0,
+          syncSucceededCount: get().syncSucceededCount + event.summary.succeeded,
+          compareStats: event.summary.stats ?? get().compareStats,
+          statusText:
+            event.summary.failed > 0
+              ? `Retry failed for ${event.summary.failed} item(s)`
+              : fixed.length === 1
+                ? `Fixed and synced: ${fixedLabel}`
+                : `Fixed and synced ${event.summary.succeeded} item(s)`,
+          logs: [
+            ...(fixed.length > 0
+              ? [
+                  {
+                    id: crypto.randomUUID(),
+                    time: new Date().toLocaleTimeString(),
+                    message:
+                      fixed.length === 1
+                        ? `Synced after fix: ${fixedLabel}`
+                        : `Synced ${event.summary.succeeded} item(s) after fix`,
+                    level: 'success' as const,
+                  },
+                ]
+              : []),
+            ...(event.summary.failures.length > 0
+              ? event.summary.failures.map((failure) => ({
+                  id: crypto.randomUUID(),
+                  time: new Date().toLocaleTimeString(),
+                  message: `Retry failed — ${failure.relPath}: ${failure.message}`,
+                  level: 'error' as const,
+                }))
+              : []),
+            ...get().logs,
+          ],
+        })
+        if (compareRunId) {
+          void Promise.all([
+            loadCompareRows(compareRunId, compareFilter, comparePathPrefix),
+            loadCompareTree(compareRunId, compareFilter),
+          ]).then(([page, compareFolderTree]) => {
+            set({ ...comparePagePatch(page), compareFolderTree })
+          })
+        }
+        return
+      }
+
       const counts =
         event.summary.failed > 0
           ? `${event.summary.succeeded} ok, ${event.summary.failed} failed`
           : `${event.summary.succeeded} ok`
-      const { compareRunId, compareFilter, comparePathPrefix, pendingSyncPrefix } = get()
+      const { compareRunId, comparePathPrefix, pendingSyncPrefix } = get()
+      const nextFilter = event.summary.failures.length > 0 ? 'errors' : get().compareFilter
       const nextPrefix =
         !pendingSyncPrefix ||
         comparePathPrefix === pendingSyncPrefix ||
         (pendingSyncPrefix !== '' && comparePathPrefix.startsWith(`${pendingSyncPrefix}/`))
           ? ''
           : comparePathPrefix
+      const failureLogs: LogEntry[] = event.summary.failures.map((failure) => ({
+        id: crypto.randomUUID(),
+        time: new Date().toLocaleTimeString(),
+        message: `${failure.relPath}: ${failure.message}${failure.hint ? ` — ${failure.hint}` : ''}`,
+        level: 'error' as const,
+      }))
       set({
         syncBusy: false,
         syncCancelling: false,
         pendingSyncPrefix: '',
         pendingSyncDeletes: 0,
         comparePathPrefix: nextPrefix,
+        compareFilter: nextFilter,
         compareStats: event.summary.stats ?? get().compareStats,
-        statusText: event.summary.cancelled ? `Sync cancelled · ${counts}` : `Sync finished · ${counts}`,
+        syncFailures: event.summary.failures,
+        showSyncFailures: event.summary.failures.length > 0,
+        syncSucceededCount: event.summary.succeeded,
+        statusText: event.summary.cancelled
+          ? `Sync cancelled · ${counts}`
+          : event.summary.failed > 0
+            ? `Sync finished · ${counts} — see details`
+            : `Sync finished · ${counts}`,
         logs: [
           {
             id: crypto.randomUUID(),
@@ -772,18 +1099,21 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
               ? event.summary.failed > 0
                 ? `Sync cancelled: ${event.summary.succeeded} succeeded, ${event.summary.failed} failed`
                 : `Sync cancelled: ${event.summary.succeeded} succeeded`
-              : `Sync complete: ${event.summary.succeeded} succeeded, ${event.summary.failed} failed`,
+              : event.summary.failed > 0
+                ? `Sync finished: ${event.summary.succeeded} succeeded, ${event.summary.failed} failed`
+                : `Sync complete: ${event.summary.succeeded} succeeded`,
             level: event.summary.failed > 0 ? 'error' : event.summary.cancelled ? 'info' : 'success',
           },
+          ...failureLogs,
           ...get().logs,
         ],
       })
       if (compareRunId) {
         void Promise.all([
-          loadCompareRows(compareRunId, compareFilter, nextPrefix),
-          loadCompareTree(compareRunId, compareFilter),
-        ]).then(([compareRows, compareFolderTree]) => {
-          set({ compareRows, compareFolderTree, selectedRow: null })
+          loadCompareRows(compareRunId, nextFilter, nextPrefix),
+          loadCompareTree(compareRunId, nextFilter),
+        ]).then(([page, compareFolderTree]) => {
+          set({ ...comparePagePatch(page), compareFolderTree, selectedRow: null })
         })
       }
     }
@@ -791,18 +1121,114 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       const path = event.currentPath?.trim()
       const isPhase = Boolean(path && /…$/.test(path) && !path.includes('/') && !path.includes('\\'))
       if (isPhase) {
-        set({ statusText: path })
+        const queued = get().syncQueued ? ' · Sync queued' : ''
+        set({ statusText: `${path}${queued}` })
         return
       }
       if (event.done <= 0) {
-        set({ statusText: path ? `Comparing… ${path}` : 'Comparing…' })
+        const queued = get().syncQueued ? ' · Sync queued' : ''
+        set({ statusText: path ? `Comparing… ${path}${queued}` : `Comparing…${queued}` })
         return
       }
       const count = event.done.toLocaleString()
+      const queued = get().syncQueued ? ' · Sync queued' : ''
       set({
-        statusText: path ? `Comparing… ${count} items · ${path}` : `Comparing… ${count} items`,
+        statusText: path
+          ? `Comparing… ${count} items · ${path}${queued}`
+          : `Comparing… ${count} items${queued}`,
       })
     }
+  },
+
+  dismissSyncFailures: () => set({ showSyncFailures: false }),
+
+  retryFailedSync: async () => {
+    const rowIds = get().syncFailures.map((f) => f.rowId)
+    if (rowIds.length === 0) return
+    await get().retrySyncRows(rowIds)
+  },
+
+  retrySyncRows: async (rowIds) => {
+    const { activeJobId, compareRunId } = get()
+    if (!activeJobId || !compareRunId || rowIds.length === 0) return
+
+    set({
+      partialRetryRowIds: rowIds,
+      syncBusy: true,
+      showSyncFailures: true,
+      statusText: rowIds.length === 1 ? 'Retrying failed item…' : `Retrying ${rowIds.length} items…`,
+    })
+
+    const done = waitForSyncDone()
+    const result = await window.myFileSync.syncRun({
+      jobId: activeJobId,
+      runId: compareRunId,
+      rowIds,
+    })
+    if (!result.ok) {
+      set({
+        syncBusy: false,
+        partialRetryRowIds: null,
+        failureFixRowId: null,
+        failureFixStatus: null,
+        statusText: result.error.message,
+      })
+      syncDoneResolve = null
+      return
+    }
+    set({ syncRunId: result.value.syncRunId })
+    await done
+  },
+
+  viewSyncErrorsInGrid: async () => {
+    set({ showSyncFailures: false, mainTab: 'compare' })
+    await get().setCompareFilter('errors')
+  },
+
+  showFailureInFolder: async (path) => {
+    await get().revealDiskPath(path)
+  },
+
+  openDiskPath: async (path) => {
+    const result = await window.myFileSync.openPath({ path })
+    if (!result.ok) set({ statusText: result.error.message })
+  },
+
+  revealDiskPath: async (path) => {
+    const result = await window.myFileSync.showItemInFolder({ path })
+    if (!result.ok) set({ statusText: result.error.message })
+  },
+
+  clearFailureReadOnly: async (failure) => {
+    if (!failure.targetPath) return
+
+    set({
+      busy: true,
+      failureFixRowId: failure.rowId,
+      failureFixStatus: 'Clearing read-only…',
+      showSyncFailures: true,
+    })
+
+    const result = await window.myFileSync.clearReadOnly({ path: failure.targetPath })
+    if (!result.ok) {
+      set({
+        busy: false,
+        failureFixRowId: null,
+        failureFixStatus: null,
+        statusText: result.error.message,
+      })
+      return
+    }
+
+    set({
+      failureFixStatus: 'Retrying sync…',
+      syncFailures: get().syncFailures.map((f) =>
+        f.rowId === failure.rowId ? { ...f, hint: 'Read-only cleared — retrying sync…' } : f,
+      ),
+    })
+
+    await get().retrySyncRows([failure.rowId])
+    set({ busy: false })
   },
 }))
 

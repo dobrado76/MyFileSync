@@ -105,6 +105,8 @@ export type PlannedAction = {
   destPath?: string
   isDir: boolean
   excludeStreams: string[]
+  /** Estimated bytes touched — used to run smaller work first within each action tier. */
+  workBytes: number
 }
 
 export type SyncProgress = {
@@ -115,12 +117,23 @@ export type SyncProgress = {
   errors: number
 }
 
+export type SyncFailure = {
+  rowId: string
+  relPath: string
+  action: SyncActionType
+  targetPath?: string
+  code: 'validation' | 'not-found' | 'io' | 'busy' | 'not-allowed' | 'cancelled' | 'conflict'
+  message: string
+  hint?: string
+}
+
 export type SyncSummary = {
   done: number
   total: number
   succeeded: number
   failed: number
   cancelled: boolean
+  failures: SyncFailure[]
   stats?: CompareStats
 }
 

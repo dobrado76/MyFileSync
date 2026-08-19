@@ -2,13 +2,13 @@ import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
-import { isSystemSkipPath, shouldIncludePath } from '@shared/compare/filters'
-import { classifyPair } from '@shared/compare/classify'
+import { compilePathFilter, isSystemSkipPath } from '@shared/compare/filters'
+import { classifyPair, pairIsEqual } from '@shared/compare/classify'
 import type { AdsManifest } from '@shared/ads/paths'
 import type { CompareRow, SideRecord, SideSummary } from '@shared/schemas/compare'
 import type { JobFile, JobPair } from '@shared/schemas/job'
 import { readFileHashCache, writeFileHashCache, readFolderStats } from '../ads/cache'
-import { listStreams } from '../ads/list'
+import { listStreamsSync } from '../ads/list'
 import { canSkipSubtree } from './fastFolder'
 import { yieldToEventLoop } from '../win32/nativeLock'
 import { readDirectoryWin32, type DirEntry } from '../win32/find'
@@ -30,6 +30,9 @@ type GetFilesOptions = {
   isCancelled?: () => boolean
 }
 
+/** Yield often enough for Cancel IPC; not on every item. */
+const YIELD_INTERVAL_MS = 75
+
 /**
  * BackupMirror GetFiles, memory-safe:
  * - Equals are counted, never stored.
@@ -41,25 +44,38 @@ export async function getFiles(options: GetFilesOptions): Promise<GetFilesResult
   let equalCount = 0
   let scanned = 0
   let diffCount = 0
-  let sinceYield = 0
+  let lastYieldAt = Date.now()
   const seen = new Set<string>()
 
   const leftRoot = options.pair.left
   const rightRoot = options.pair.right
   const job = options.job
   const hashContent = job.compare.method === 'content' && job.compare.contentHash !== 'none'
+  const includeLeft = compilePathFilter(job.filters.include, job.filters.exclude, leftRoot)
+  const includeRight =
+    leftRoot.toLowerCase() === rightRoot.toLowerCase()
+      ? includeLeft
+      : compilePathFilter(job.filters.include, job.filters.exclude, rightRoot)
+  const twoWayPromotesEquals =
+    job.variant === 'twoWay' &&
+    job.syncRules.some((rule) => rule.action === 'forceMirror' || rule.action === 'forceUpdate')
 
-  async function note(relPath: string): Promise<void> {
+  function note(relPath: string): Promise<void> | undefined {
     scanned++
-    sinceYield++
     options.onProgress?.(relPath)
-    if (sinceYield >= 10) {
-      sinceYield = 0
-      await yieldToEventLoop()
+    const now = Date.now()
+    if (now - lastYieldAt >= YIELD_INTERVAL_MS) {
+      lastYieldAt = now
+      return yieldToEventLoop()
     }
+    return undefined
   }
 
-  async function emit(relPath: string, left?: SideRecord, right?: SideRecord): Promise<boolean> {
+  function diffRow(relPath: string, left?: SideRecord, right?: SideRecord): CompareRow | undefined {
+    if (!twoWayPromotesEquals && pairIsEqual(left, right, job)) {
+      equalCount++
+      return undefined
+    }
     const row =
       job.variant === 'twoWay'
         ? classifyTwoWayPair(
@@ -73,28 +89,47 @@ export async function getFiles(options: GetFilesOptions): Promise<GetFilesResult
         : classifyPair(options.pair.id, relPath, left, right, job)
     if (row.category === 'equal') {
       equalCount++
-      return false
+      return undefined
     }
     row.left = slimSide(row.left)
     row.right = slimSide(row.right)
     diffCount++
-    await options.onDiff(row)
-    return true
+    return row
   }
 
-  async function visit(relDir: string): Promise<void> {
+  function folderKey(absDir: string): string {
+    return path.normalize(absDir).replace(/[/\\]+$/, '').toLowerCase()
+  }
+
+  function seenByPath(absDir: string): boolean {
+    const identity = folderKey(absDir)
+    if (seen.has(identity)) return true
+    seen.add(identity)
+    return false
+  }
+
+  async function seenByRealpath(absDir: string): Promise<boolean> {
+    try {
+      const identity = (await fsp.realpath(absDir)).toLowerCase()
+      if (seen.has(identity)) return true
+      seen.add(identity)
+      return false
+    } catch {
+      return false
+    }
+  }
+
+  async function visit(relDir: string, resolveIdentity: boolean): Promise<void> {
     if (options.isCancelled?.()) return
     if (isSystemSkipPath(relDir)) return
 
     const leftDir = relDir ? path.join(leftRoot, relDir) : leftRoot
     const rightDir = relDir ? path.join(rightRoot, relDir) : rightRoot
 
-    try {
-      const identity = (await fsp.realpath(leftDir)).toLowerCase()
-      if (seen.has(identity)) return
-      seen.add(identity)
-    } catch {
-      /* keep going with abs path */
+    if (resolveIdentity) {
+      if (await seenByRealpath(leftDir)) return
+    } else if (seenByPath(leftDir)) {
+      return
     }
 
     if (
@@ -130,39 +165,38 @@ export async function getFiles(options: GetFilesOptions): Promise<GetFilesResult
       if (options.isCancelled?.()) return
       const relPath = joinRel(relDir, leftEnt.name)
       if (isSystemSkipPath(relPath)) continue
-      if (!shouldIncludePath(relPath, job.filters.include, job.filters.exclude, leftRoot)) {
-        continue
-      }
+      if (!includeLeft(relPath)) continue
 
       const leftAbs = path.join(leftRoot, relPath)
       const rightAbs = path.join(rightRoot, relPath)
 
-      await note(relPath)
+      const yielded = note(relPath)
+      if (yielded) await yielded
 
       const rightEnt = rightEntries.get(leftEnt.name.toLowerCase())
       const rightOk = Boolean(rightEnt && rightEnt.isDir && !rightEnt.isSymlink)
 
-      const leftRec = await toRecord(relPath, leftAbs, leftEnt, false, rightOk, job)
-      const rightRec = rightOk ? await toRecord(relPath, rightAbs, rightEnt!, false, true, job) : undefined
-      await emit(relPath, leftRec, rightRec)
+      const leftRec = toRecord(relPath, leftAbs, leftEnt, rightOk)
+      const rightRec = rightOk ? toRecord(relPath, rightAbs, rightEnt!, true) : undefined
+      const row = diffRow(relPath, leftRec, rightRec)
+      if (row) await options.onDiff(row)
       if (!rightOk) continue
-      await visit(relPath)
+      await visit(relPath, leftEnt.isReparse)
     }
 
     for (const leftEnt of leftFiles) {
       if (options.isCancelled?.()) return
       const relPath = joinRel(relDir, leftEnt.name)
       if (isSystemSkipPath(relPath)) continue
-      if (!shouldIncludePath(relPath, job.filters.include, job.filters.exclude, leftRoot)) {
-        continue
-      }
+      if (!includeLeft(relPath)) continue
 
       if (job.behavior.archiveFlagScanOnly && !leftEnt.archive) continue
 
       const leftAbs = path.join(leftRoot, relPath)
       const rightAbs = path.join(rightRoot, relPath)
 
-      await note(relPath)
+      const yielded = note(relPath)
+      if (yielded) await yielded
 
       const rightEnt = rightEntries.get(leftEnt.name.toLowerCase())
       const rightOk = Boolean(rightEnt && !rightEnt.isDir && !rightEnt.isSymlink)
@@ -171,11 +205,16 @@ export async function getFiles(options: GetFilesOptions): Promise<GetFilesResult
       const wantAds = Boolean(sizeTimeEqual)
       const wantHash = hashContent && sizeTimeEqual
 
-      const leftRec = await toRecord(relPath, leftAbs, leftEnt, wantHash, wantAds, job)
+      const leftRec = wantHash
+        ? await toRecordHashed(relPath, leftAbs, leftEnt, wantAds, job)
+        : toRecord(relPath, leftAbs, leftEnt, wantAds)
       const rightRec = rightOk
-        ? await toRecord(relPath, rightAbs, rightEnt!, wantHash, wantAds, job)
+        ? wantHash
+          ? await toRecordHashed(relPath, rightAbs, rightEnt!, wantAds, job)
+          : toRecord(relPath, rightAbs, rightEnt!, wantAds)
         : undefined
-      await emit(relPath, leftRec, rightRec)
+      const row = diffRow(relPath, leftRec, rightRec)
+      if (row) await options.onDiff(row)
     }
 
     if (job.variant === 'update') return
@@ -187,18 +226,18 @@ export async function getFiles(options: GetFilesOptions): Promise<GetFilesResult
 
       const relPath = joinRel(relDir, rightEnt.name)
       if (isSystemSkipPath(relPath)) continue
-      if (!shouldIncludePath(relPath, job.filters.include, job.filters.exclude, rightRoot)) {
-        continue
-      }
+      if (!includeRight(relPath)) continue
 
-      await note(relPath)
+      const yielded = note(relPath)
+      if (yielded) await yielded
       const rightAbs = path.join(rightRoot, relPath)
-      const rightRec = await toRecord(relPath, rightAbs, rightEnt, false, false, job)
-      await emit(relPath, undefined, rightRec)
+      const rightRec = toRecord(relPath, rightAbs, rightEnt, false)
+      const row = diffRow(relPath, undefined, rightRec)
+      if (row) await options.onDiff(row)
     }
   }
 
-  await visit('')
+  await visit('', true)
   return { equalCount, scanned, diffCount }
 }
 
@@ -236,10 +275,12 @@ async function readDirectory(absDir: string): Promise<Map<string, DirEntry>> {
     } catch {
       continue
     }
+    const isSymlink = stat.isSymbolicLink()
     entries.set(name.toLowerCase(), {
       name,
       isDir: stat.isDirectory(),
-      isSymlink: stat.isSymbolicLink(),
+      isSymlink,
+      isReparse: isSymlink,
       size: stat.size,
       mtimeMs: stat.mtimeMs,
       atimeMs: stat.atimeMs,
@@ -249,30 +290,19 @@ async function readDirectory(absDir: string): Promise<Map<string, DirEntry>> {
   return entries
 }
 
-async function toRecord(
+function toRecord(
   relPath: string,
   absPath: string,
   meta: DirEntry,
-  hashContent: boolean,
   wantAds: boolean,
-  job: JobFile,
-): Promise<SideRecord> {
+): SideRecord {
   let adsManifest: AdsManifest = []
   if (wantAds && process.platform === 'win32') {
     try {
-      const listed = await listStreams(absPath)
+      const listed = listStreamsSync(absPath)
       if (listed.ok) adsManifest = listed.value
     } catch {
       adsManifest = []
-    }
-  }
-
-  let primaryHash: string | undefined
-  if (!meta.isDir && hashContent) {
-    try {
-      primaryHash = await resolveFileHash(absPath, meta.size, meta.mtimeMs, meta.atimeMs, job)
-    } catch {
-      primaryHash = undefined
     }
   }
 
@@ -281,9 +311,24 @@ async function toRecord(
     isDir: meta.isDir,
     dataSize: meta.size,
     mtimeMs: meta.mtimeMs,
-    primaryHash,
     adsManifest,
   }
+}
+
+async function toRecordHashed(
+  relPath: string,
+  absPath: string,
+  meta: DirEntry,
+  wantAds: boolean,
+  job: JobFile,
+): Promise<SideRecord> {
+  const record = toRecord(relPath, absPath, meta, wantAds)
+  try {
+    record.primaryHash = await resolveFileHash(absPath, meta.size, meta.mtimeMs, meta.atimeMs, job)
+  } catch {
+    record.primaryHash = undefined
+  }
+  return record
 }
 
 async function resolveFileHash(

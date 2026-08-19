@@ -1,5 +1,6 @@
 import type { CompareRow, PlannedAction } from '@shared/schemas/compare'
 import type { JobFile, JobPair } from '@shared/schemas/job'
+import { estimateWorkBytes } from '@shared/sync/order'
 import path from 'node:path'
 
 export function rowToPlannedAction(
@@ -61,6 +62,7 @@ export function rowToPlannedAction(
     destPath,
     isDir,
     excludeStreams: job.ads.excludeStreams,
+    workBytes: estimateWorkBytes(row),
   }
 }
 

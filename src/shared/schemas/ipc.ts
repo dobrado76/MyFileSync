@@ -28,6 +28,16 @@ export const runUpdateRequestSchema = z.object({
   installerPath: z.string().min(1),
 })
 
+export const showItemInFolderRequestSchema = z.object({
+  path: z.string().min(1),
+})
+
+export const openPathRequestSchema = showItemInFolderRequestSchema
+
+export const clearReadOnlyRequestSchema = z.object({
+  path: z.string().min(1),
+})
+
 export const settingsSetRequestSchema = settingsSchema.partial().refine(
   (value) => Object.keys(value).length > 0,
   'At least one setting is required.',
@@ -94,6 +104,7 @@ export const jobImportPathRequestSchema = z.object({ path: z.string().min(1) })
 export const compareRunRequestSchema = z.object({
   jobId: z.string().uuid(),
   runId: z.string().uuid().optional(),
+  job: jobSchema.optional(),
 })
 
 export const compareGetRowsRequestSchema = z.object({
@@ -135,6 +146,7 @@ export const syncRunRequestSchema = z.object({
   jobId: z.string().uuid(),
   runId: z.string().uuid(),
   pathPrefix: z.string().optional(),
+  rowIds: z.array(z.string().min(1)).optional(),
 })
 
 export const syncCancelRequestSchema = z.object({ syncRunId: z.string().uuid().optional() })

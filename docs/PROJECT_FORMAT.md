@@ -67,6 +67,9 @@ userData/
   "parallelism": {
     "compareWorkers": 4,
     "copyPerDevice": 6
+  },
+  "ui": {
+    "pairListHeight": 200
   }
 }
 ```
@@ -75,6 +78,8 @@ userData/
 
 | Field | Values | Notes |
 |-------|--------|-------|
+| `pairs[].enabled` | boolean | Compare and Sync run only ticked pairs. Keep unused pairs in the same job. |
+| `ui.pairListHeight` | number (px) | Folder-pair list splitter height. Written when you release the splitter. |
 | `variant` | `mirror` \| `update` \| `twoWay` \| `automatic` | `twoWay` uses the sync DB |
 | `compare.method` | `sizeAndTime` \| `content` | Content uses `contentHash` |
 | `compare.contentHash` | `md5` \| `sha256` \| `none` | |
@@ -93,6 +98,8 @@ userData/
 | `defaultCopyPerDevice` | number | 6 |
 | `logRetentionDays` | number | 30 |
 | `lastJobId` | string \| null | null |
+| `updatesFolder` | string | `""` |
+| `hardwareAcceleration` | boolean | `true` — Chromium GPU; off applies on next launch |
 
 Export/import settings strips `window-state.json`.
 

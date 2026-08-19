@@ -24,7 +24,8 @@ Prefix: `sync:` for engine, `job:` for jobs, `app:` for shell.
 |---------|---------|----------|
 | `app:ready` | — | `{ platform, version }` |
 | `app:pickFolder` | `{ title? }` | `{ path: string \| null }` |
-| `app:showItemInFolder` | `{ path }` | `{ ok }` |
+| `app:showItemInFolder` | `{ path }` | `{ ok }` (opens `mfe://reveal?path=…`) |
+| `app:openPath` | `{ path }` | `{ ok }` |
 
 ### Jobs
 

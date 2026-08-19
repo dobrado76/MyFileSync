@@ -172,19 +172,12 @@ export async function applyMoveDetection(store: CompareRowStore): Promise<number
 
   const creates: MoveIndexEntry[] = []
   const deletes: MoveIndexEntry[] = []
-  const createRows = new Map<string, CompareRow>()
-  const deleteRows = new Map<string, CompareRow>()
 
   for await (const row of store.iterateAll()) {
     const entry = entryFromRow(row)
     if (!entry) continue
-    if (entry.action === 'Create') {
-      creates.push(entry)
-      createRows.set(row.id, row)
-    } else {
-      deletes.push(entry)
-      deleteRows.set(row.id, row)
-    }
+    if (entry.action === 'Create') creates.push(entry)
+    else deletes.push(entry)
   }
 
   if (creates.length === 0 || deletes.length === 0) return 0
@@ -196,8 +189,8 @@ export async function applyMoveDetection(store: CompareRowStore): Promise<number
   const replacements = new Map<string, CompareRow>()
 
   for (const pair of pairs) {
-    const deleteRow = deleteRows.get(pair.deleteId)
-    const createRow = createRows.get(pair.createId)
+    const deleteRow = await store.getRow(pair.deleteId)
+    const createRow = await store.getRow(pair.createId)
     if (!deleteRow || !createRow) continue
     const moved = toMovedRow(deleteRow, createRow, pair.kind)
     moved.relPath = pair.newRelPath

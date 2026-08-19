@@ -1,10 +1,11 @@
 import { useEffect } from 'react'
-import { shouldShowUpdateBanner, useWorkbenchStore } from './store/workbenchStore'
+import { shouldShowUpdateBanner, isJobConfigLocked, useWorkbenchStore } from './store/workbenchStore'
 import { StatusBar } from './components/StatusBar'
 import { UpdateBanner } from './components/UpdateBanner'
 import { SettingsModal } from './components/SettingsModal'
 import { BackupMirrorWorkbench } from './components/BackupMirrorWorkbench'
 import { SyncConfirmModal } from './components/SyncConfirmModal'
+import { SyncFailuresModal } from './components/SyncFailuresModal'
 import { formatDisplayVersion } from '@shared/version'
 
 export default function App() {
@@ -15,18 +16,22 @@ export default function App() {
     activePairIndex,
     mainTab,
     compareRows,
+    compareRowOffset,
+    compareRowTotal,
     compareFolderTree,
     comparePathPrefix,
     compareFilter,
     compareBusy,
     compareStats,
     syncBusy,
+    syncQueued,
     statusText,
     logs,
     showDeleteConfirm,
     pendingSyncDeletes,
     updatesFolder,
     updatesStatus,
+    hardwareAcceleration,
     pendingUpdate,
     busy,
     selectedRow,
@@ -45,6 +50,8 @@ export default function App() {
     movePair,
     flipPair,
     setPairPath,
+    setPairEnabled,
+    setPairListHeight,
     clearCompareList,
     browsePairPath,
     runCompare,
@@ -54,10 +61,14 @@ export default function App() {
     cancelOperation,
     setCompareFilter,
     selectCompareFolder,
+    loadCompareWindow,
     handleFolderAction,
+    openDiskPath,
+    revealDiskPath,
     toggleRowIncluded,
     browseUpdatesFolder,
     setUpdatesFolder,
+    setHardwareAcceleration,
     checkForUpdates,
     runUpdate,
     dismissUpdate,
@@ -68,6 +79,16 @@ export default function App() {
     closeSettings,
     handleSyncEvent,
     appVersion,
+    syncFailures,
+    showSyncFailures,
+    syncSucceededCount,
+    failureFixRowId,
+    failureFixStatus,
+    dismissSyncFailures,
+    retryFailedSync,
+    viewSyncErrorsInGrid,
+    showFailureInFolder,
+    clearFailureReadOnly,
   } = state
 
   useEffect(() => {
@@ -76,7 +97,19 @@ export default function App() {
     return unsub
   }, [init, handleSyncEvent])
 
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.repeat || event.altKey || event.shiftKey) return
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 's') return
+      event.preventDefault()
+      void saveActiveJob()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [saveActiveJob])
+
   const showBanner = shouldShowUpdateBanner(state)
+  const configLocked = isJobConfigLocked(compareBusy, syncBusy)
 
   return (
     <div className="app">
@@ -91,8 +124,47 @@ export default function App() {
       ) : null}
 
       <header className="app-header app-header-compact">
-        <h1 className="app-title">MyFileSync</h1>
-        <span className="app-subtitle">{formatDisplayVersion(appVersion)}</span>
+        <div className="app-header-start">
+          <h1 className="app-title">MyFileSync</h1>
+          <span className="app-subtitle">{formatDisplayVersion(appVersion)}</span>
+        </div>
+        <div className="app-header-center">
+          <label className="bm-field" htmlFor="job-select">
+            <span className="bm-label">Job</span>
+            <select
+              id="job-select"
+              className="bm-control bm-job-dropdown"
+              value={activeJob?.id ?? ''}
+              disabled={configLocked}
+              onChange={(e) => void selectJob(e.target.value)}
+              title={
+                configLocked
+                  ? 'Finish or cancel compare/sync before switching jobs'
+                  : 'Switch between saved jobs'
+              }
+            >
+              {jobs.length === 0 ? <option value="">No jobs</option> : null}
+              {jobs.map((j) => (
+                <option key={j.id} value={j.id}>
+                  {j.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            className="button button-sm"
+            disabled={configLocked}
+            onClick={() => void newJob()}
+            title={
+              configLocked
+                ? 'Finish or cancel compare/sync before creating a new job'
+                : 'Create a new empty job'
+            }
+          >
+            + New
+          </button>
+        </div>
         <div className="header-actions">
           <button type="button" className="button" onClick={openSettings}>
             Settings
@@ -101,27 +173,29 @@ export default function App() {
       </header>
 
       <BackupMirrorWorkbench
-        jobs={jobs}
         activeJob={activeJob}
         activePairIndex={activePairIndex}
         mainTab={mainTab}
         compareRows={compareRows}
+        compareRowOffset={compareRowOffset}
+        compareRowTotal={compareRowTotal}
         compareFolderTree={compareFolderTree}
         comparePathPrefix={comparePathPrefix}
         compareFilter={compareFilter}
         compareBusy={compareBusy}
         compareStats={compareStats}
         syncBusy={syncBusy}
+        syncQueued={syncQueued}
         selectedRow={selectedRow}
         logs={logs}
         busy={busy}
         onMainTabChange={setMainTab}
-        onSelectJob={(id) => void selectJob(id)}
-        onNewJob={() => void newJob()}
         onImportJob={() => void importJobFile()}
         onChangeJob={updateActiveJob}
         onBrowsePath={(index, side) => void browsePairPath(index, side)}
         onSetPairPath={setPairPath}
+        onSetPairEnabled={setPairEnabled}
+        onSetPairListHeight={setPairListHeight}
         onVariantChange={(variant) => updateActiveJob({ variant })}
         onAddPair={addPair}
         onRemovePair={removePair}
@@ -144,21 +218,28 @@ export default function App() {
         onCancel={() => void cancelOperation()}
         onFilterChange={(f) => void setCompareFilter(f)}
         onSelectFolder={(path) => void selectCompareFolder(path)}
+        onRowsWindowChange={(offset, limit) => void loadCompareWindow(offset, limit)}
         onFolderAction={(action, path, deletes) => void handleFolderAction(action, path, deletes)}
+        onOpenPath={(path) => void openDiskPath(path)}
+        onRevealPath={(path) => void revealDiskPath(path)}
         onToggleIncluded={(id, included) => void toggleRowIncluded(id, included)}
         onSelectRow={selectRow}
         onPairIndexChange={setActivePairIndex}
+        syncFailedRowIds={syncFailures.map((failure) => failure.rowId)}
+        hasSyncErrors={syncFailures.length > 0}
       />
 
       <SettingsModal
         open={settingsOpen}
         updatesFolder={updatesFolder}
         updatesStatus={updatesStatus}
+        hardwareAcceleration={hardwareAcceleration}
         busy={busy}
         onClose={closeSettings}
         onBrowseUpdatesFolder={() => void browseUpdatesFolder()}
         onUpdatesFolderChange={setUpdatesFolder}
         onCheckForUpdates={() => void checkForUpdates()}
+        onHardwareAccelerationChange={setHardwareAcceleration}
         onExportSettings={() => void exportSettings()}
         onImportSettings={() => void importSettings()}
       />
@@ -168,6 +249,20 @@ export default function App() {
         deleteCount={pendingSyncDeletes}
         onConfirm={() => void confirmSync()}
         onCancel={cancelSyncConfirm}
+      />
+
+      <SyncFailuresModal
+        open={showSyncFailures}
+        failures={syncFailures}
+        succeeded={syncSucceededCount}
+        busy={busy || syncBusy}
+        fixingRowId={failureFixRowId}
+        fixStatus={failureFixStatus}
+        onDismiss={dismissSyncFailures}
+        onRetry={() => void retryFailedSync()}
+        onViewInGrid={() => void viewSyncErrorsInGrid()}
+        onShowInFolder={(path) => void showFailureInFolder(path)}
+        onClearReadOnly={(failure) => void clearFailureReadOnly(failure)}
       />
 
       <StatusBar text={statusText} showElapsed={compareBusy || syncBusy} />

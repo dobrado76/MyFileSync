@@ -25,12 +25,17 @@ export const jobPairSchema = z.object({
   enabled: z.boolean(),
 })
 
+export const jobUiSchema = z.object({
+  pairListHeight: z.number().int().min(40).max(4000).optional(),
+})
+
 export const jobSchema = z.object({
   format: z.literal('myfilesync-job'),
   version: z.literal(1),
   id: z.string().uuid(),
   name: z.string().min(1),
   pairs: z.array(jobPairSchema).min(1),
+  ui: jobUiSchema.default({}),
   variant: z.enum(['mirror', 'update', 'automatic', 'twoWay']),
   compare: z.object({
     method: z.enum(['sizeAndTime', 'content']),
@@ -171,7 +176,12 @@ export function createDefaultJob(name = 'New job'): JobFile {
       debounceMs: 2000,
     },
     syncRules: [],
+    ui: {},
   }
+}
+
+export function enabledJobPairs(job: JobFile): JobPair[] {
+  return job.pairs.filter((pair) => pair.enabled)
 }
 
 export function toJobSummary(job: JobFile): JobSummary {
@@ -180,6 +190,6 @@ export function toJobSummary(job: JobFile): JobSummary {
     name: job.name,
     variant: job.variant,
     pairCount: job.pairs.length,
-    enabledPairCount: job.pairs.filter((p) => p.enabled).length,
+    enabledPairCount: enabledJobPairs(job).length,
   }
 }

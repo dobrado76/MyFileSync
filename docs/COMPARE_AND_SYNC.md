@@ -15,7 +15,7 @@
 
 ## Compare pipeline
 
-BackupMirror `GetFiles`: one source folder against the matching target folder. Compare `$DATA`, then ADS if size and time already match, then the next file. Recurse. No two-tree merge.
+BackupMirror `GetFiles`: one source folder against the matching target folder, for each **enabled** pair (`pairs[].enabled`). Unticked pairs stay in the job but are skipped. Compare `$DATA`, then ADS if size and time already match, then the next file. Recurse. No two-tree merge.
 
 ```mermaid
 flowchart TD
@@ -35,8 +35,9 @@ flowchart TD
 - Input: pair roots, filters (include/exclude globs).
 - Output: **diff** rows streamed to a JSONL store (never a giant in-memory array). Equals are counted only.
 - A folder missing on the other side is **one** Create or Delete. Children are not listed; sync copies or removes the tree (filters applied during copy).
-- File-level diffs are one row each. The grid pages from disk.
-- After compare, a **folder tree** is built from those diff rows (no extra walk). Clicking a folder filters the grid to that path prefix (`compare:getRows` `pathPrefix`).
+- File-level diffs are one row each. The grid is **virtualized**: only the visible window is fetched from disk and mounted in the DOM (millions of changes do not become millions of UI rows).
+- After compare, a **folder tree** is built from a slim path/action index (not by parsing every JSONL row into memory). Clicking a folder filters the grid to that path prefix (`compare:getRows` `pathPrefix`).
+- **Cancel** stops the next item. Compare cancel keeps diffs already found. Sync cancel **drops items that already succeeded** so the next Sync is a resume. Move/rename pairing runs only if Compare finishes.
 - Per folder: **FindFirstFile** on source and target (size + mtime from the directory index — files are not opened). Then ADS only if `$DATA` size and time already match. **Folders that exist on both sides compare ADS only** — directory mtime is ignored (adding a file updates the folder clock and must not recopy the tree).
 - Skip: `$…` segments and `RECYCLER` (BackupMirror `\$` / `RECYCLER`).
 - Symlinks: not followed. Junctions are followed (with a cycle guard).
@@ -121,7 +122,7 @@ flowchart LR
 - Folder **Create** copies the tree. Folder **Update** / ADS-only never recopies children.
 - `parallelism.copyPerDevice`: max concurrent copies per volume root (FFS-style).
 - Progress: `{ phase, done, total, currentPath, bytes, etaMs }` events.
-- Cancel: abort flag is set immediately (CopyFileEx `pbCancel`). The sync loop yields between items so Cancel IPC is not blocked; in-flight items are not counted as failed. Cancel skips the compare-row rewrite so the status bar can clear as soon as copies stop.
+- Cancel: abort flag is set immediately (CopyFileEx `pbCancel`). The sync loop yields between items so Cancel IPC is not blocked; in-flight items are not counted as failed. When the run ends, succeeded items are removed from the change list (same as a finished Sync) so you can click Sync again without redo/errors.
 
 ### VSS
 
@@ -184,7 +185,7 @@ Map to `AppError` with codes:
 | Code | Example |
 |------|---------|
 | `io` | Generic failure |
-| `not-allowed` | Read-only folder |
+| `not-allowed` | Permission denied (ACL). Dest read-only is cleared and does not fail the sync (D22). |
 | `busy` | File locked |
 | `validation` | Invalid job |
 | `cancelled` | User cancel |

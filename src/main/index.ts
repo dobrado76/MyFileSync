@@ -4,16 +4,18 @@ import { join } from 'node:path'
 import { registerIpc } from './ipc/register'
 import { parseCliArgs, runCli } from './cli/runner'
 import {
-  applyWindowState,
+  applyWindowBounds,
+  attachWindowStatePersistence,
   DEFAULT_WINDOW_STATE,
   loadWindowState,
-  saveWindowState,
 } from './settings/windowState'
 import { attachEditContextMenu } from './ui/editContextMenu'
+import { applyHardwareAccelerationSetting } from './settings/hardwareAcceleration'
 
 const isDev = !app.isPackaged
 
 app.setAppUserModelId('com.myfilesync.app')
+applyHardwareAccelerationSetting()
 
 function appIconPath(): string | undefined {
   const candidates = [
@@ -38,7 +40,7 @@ function preloadPath(): string {
 }
 
 async function createWindow(): Promise<void> {
-  const saved = await loadWindowState()
+  const saved = loadWindowState()
   const initial = saved ?? DEFAULT_WINDOW_STATE
   const iconFile = appIconPath()
   const icon = iconFile ? nativeImage.createFromPath(iconFile) : undefined
@@ -70,15 +72,14 @@ async function createWindow(): Promise<void> {
   if (!saved) {
     window.center()
   } else {
-    applyWindowState(window, initial)
+    applyWindowBounds(window, initial)
   }
+
+  attachWindowStatePersistence(window, saved)
 
   window.on('ready-to-show', () => {
     window.show()
-  })
-
-  window.on('close', () => {
-    void saveWindowState(window)
+    if (saved?.isMaximized) window.maximize()
   })
 
   window.webContents.setWindowOpenHandler((details) => {

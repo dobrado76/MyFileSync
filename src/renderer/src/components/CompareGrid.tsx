@@ -1,6 +1,8 @@
-import { useCallback, useRef, useState, type PointerEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type PointerEvent, type MouseEvent } from 'react'
 import type { CompareFilter, CompareRow, FolderTreeNode } from '@shared/schemas/compare'
+import type { PairDiskRoots } from '@shared/compare/folderTree'
 import { CompareFolderTree, type TreeFolderAction } from './CompareFolderTree'
+import { CompareInspectMenu } from './CompareInspectMenu'
 
 function adsHint(row: CompareRow): string {
   if (row.adsDelta.equal) return ''
@@ -11,7 +13,8 @@ function adsHint(row: CompareRow): string {
   return parts.join(' ')
 }
 
-function rowClass(row: CompareRow): string {
+function rowClass(row: CompareRow, failed: boolean): string {
+  if (failed) return 'row-error'
   if (!row.included) return 'row-excluded'
   if (row.action === 'Move' || row.action === 'Rename') return 'row-move'
   switch (row.category) {
@@ -33,17 +36,27 @@ function rowClass(row: CompareRow): string {
 
 type CompareGridProps = {
   rows: CompareRow[]
+  rowOffset: number
+  rowTotal: number
   filter: CompareFilter
   busy: boolean
   folderTree: FolderTreeNode | null
   pathPrefix: string
+  pathPrefixLabel?: string
   rootLabel: string
+  pairSourcePaths?: Record<string, string>
+  pairRoots?: PairDiskRoots[]
+  syncFailedRowIds: string[]
+  hasSyncErrors: boolean
   onFilterChange: (filter: CompareFilter) => void
   onSelectFolder: (path: string) => void
   onFolderAction: (action: TreeFolderAction, path: string, deletes: number) => void
   onToggleIncluded: (rowId: string, included: boolean) => void
   onSelectRow: (row: CompareRow) => void
   onRowDoubleClick: (row: CompareRow) => void
+  onRowsWindowChange: (offset: number, limit: number) => void
+  onOpenPath: (path: string) => void
+  onRevealPath: (path: string) => void
   selectedRowId: string | null
 }
 
@@ -84,32 +97,85 @@ const FILTER_OPTIONS: Array<{ id: CompareFilter; label: string; tooltip: string 
     label: 'ADS ≠',
     tooltip: 'Show items where the main file matches but NTFS alternate data streams differ (MyFileSync specialty).',
   },
+  {
+    id: 'errors',
+    label: 'Errors',
+    tooltip: 'Show items that failed on the last sync run.',
+  },
 ]
 
 const TREE_MIN = 140
 const TREE_DEFAULT = 220
+const ROW_H = 28
+const OVERSCAN = 20
 
 export function CompareGrid({
   rows,
+  rowOffset,
+  rowTotal,
   filter,
   busy,
   folderTree,
   pathPrefix,
+  pathPrefixLabel,
   rootLabel,
+  pairSourcePaths,
+  pairRoots,
+  syncFailedRowIds,
+  hasSyncErrors,
   onFilterChange,
   onSelectFolder,
   onFolderAction,
   onToggleIncluded,
   onSelectRow,
   onRowDoubleClick,
+  onRowsWindowChange,
+  onOpenPath,
+  onRevealPath,
   selectedRowId,
 }: CompareGridProps) {
+  const failedIds = new Set(syncFailedRowIds)
+  const folderChipLabel = pathPrefixLabel ?? pathPrefix
   const emptyMessage = pathPrefix
-    ? `No changes in ${pathPrefix}.`
+    ? `No changes in ${folderChipLabel}.`
     : 'Set source and target folders, then click Compare.'
   const splitRef = useRef<HTMLDivElement>(null)
   const [treeWidth, setTreeWidth] = useState(TREE_DEFAULT)
   const [dragging, setDragging] = useState(false)
+  const [rowMenu, setRowMenu] = useState<{
+    x: number
+    y: number
+    leftPath?: string
+    rightPath?: string
+  } | null>(null)
+
+  useEffect(() => {
+    if (!rowMenu) return
+    const close = () => setRowMenu(null)
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') close()
+    }
+    window.addEventListener('click', close)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('click', close)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [rowMenu])
+
+  const openRowMenu = (event: MouseEvent, row: CompareRow) => {
+    event.preventDefault()
+    event.stopPropagation()
+    onSelectRow(row)
+    const maxX = Math.max(8, window.innerWidth - 280)
+    const maxY = Math.max(8, window.innerHeight - 220)
+    setRowMenu({
+      x: Math.min(event.clientX, maxX),
+      y: Math.min(event.clientY, maxY),
+      leftPath: row.leftPath,
+      rightPath: row.rightPath,
+    })
+  }
 
   const onSplitterPointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
     event.preventDefault()
@@ -136,6 +202,32 @@ export function CompareGrid({
     target.addEventListener('pointercancel', onUp)
   }, [treeWidth])
 
+  const bodyRef = useRef<HTMLDivElement>(null)
+  const requestWindow = useCallback(() => {
+    const el = bodyRef.current
+    if (!el || rowTotal === 0) return
+    const start = Math.floor(el.scrollTop / ROW_H)
+    const visible = Math.max(1, Math.ceil(el.clientHeight / ROW_H))
+    const offset = Math.max(0, start - OVERSCAN)
+    const limit = visible + OVERSCAN * 2
+    const haveEnd = rowOffset + rows.length
+    const needEnd = Math.min(rowTotal, start + visible + OVERSCAN)
+    if (rowOffset <= start && haveEnd >= needEnd) return
+    onRowsWindowChange(offset, limit)
+  }, [onRowsWindowChange, rowOffset, rowTotal, rows.length])
+
+  useEffect(() => {
+    if (bodyRef.current) bodyRef.current.scrollTop = 0
+  }, [pathPrefix, filter])
+
+  useEffect(() => {
+    requestWindow()
+  }, [rowTotal, pathPrefix, filter, requestWindow])
+
+  const onBodyScroll = useCallback(() => {
+    requestWindow()
+  }, [requestWindow])
+
   return (
     <section className="compare-panel">
       <div className="compare-filter-bar">
@@ -146,7 +238,7 @@ export function CompareGrid({
               key={option.id}
               type="button"
               className={`filter-toggle ${filter === option.id ? 'filter-toggle-active' : ''}`}
-              disabled={busy}
+              disabled={busy || (option.id === 'errors' && !hasSyncErrors)}
               title={option.tooltip}
               aria-label={option.tooltip}
               aria-pressed={filter === option.id}
@@ -163,7 +255,7 @@ export function CompareGrid({
             title="Show all folders"
             onClick={() => onSelectFolder('')}
           >
-            {pathPrefix}
+            {folderChipLabel}
             <span aria-hidden="true"> ×</span>
           </button>
         ) : null}
@@ -175,9 +267,13 @@ export function CompareGrid({
             root={folderTree}
             selectedPath={pathPrefix}
             rootLabel={rootLabel}
+            pairSourcePaths={pairSourcePaths}
+            pairRoots={pairRoots}
             busy={busy}
             onSelect={onSelectFolder}
             onFolderAction={onFolderAction}
+            onOpenPath={onOpenPath}
+            onRevealPath={onRevealPath}
           />
         </div>
         <div
@@ -188,7 +284,13 @@ export function CompareGrid({
           onPointerDown={onSplitterPointerDown}
         />
         <div className="compare-grid-wrap">
-          <table className="compare-grid compare-grid-bm">
+          <table className="compare-grid compare-grid-bm compare-grid-head">
+            <colgroup>
+              <col className="col-check" />
+              <col className="col-source" />
+              <col className="col-action" />
+              <col className="col-target" />
+            </colgroup>
             <thead>
               <tr>
                 <th className="col-check">☑</th>
@@ -197,46 +299,97 @@ export function CompareGrid({
                 <th className="col-target">Target</th>
               </tr>
             </thead>
-            <tbody>
-              {rows.length === 0 ? (
-                <tr>
-                  <td colSpan={4} className="empty-row">
-                    {emptyMessage}
-                  </td>
-                </tr>
-              ) : (
-                rows.map((row) => {
-                  const ads = adsHint(row)
-                  return (
-                    <tr
-                      key={row.id}
-                      className={`${rowClass(row)} ${selectedRowId === row.id ? 'row-selected' : ''}`}
-                      onClick={() => onSelectRow(row)}
-                      onDoubleClick={() => onRowDoubleClick(row)}
-                    >
-                      <td>
-                        <input
-                          type="checkbox"
-                          checked={row.included}
-                          disabled={row.action === 'Skip'}
-                          onChange={(e) => onToggleIncluded(row.id, e.target.checked)}
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                      </td>
-                      <td className="path-cell">
-                        {row.leftPath ?? (row.left ? row.relPath : '—')}
-                        {ads ? <span className="ads-hint"> · {ads}</span> : null}
-                      </td>
-                      <td className="action-cell">{row.action}</td>
-                      <td className="path-cell">{row.rightPath ?? (row.right ? row.relPath : '—')}</td>
-                    </tr>
-                  )
-                })
-              )}
-            </tbody>
           </table>
+          <div className="compare-grid-body" ref={bodyRef} onScroll={onBodyScroll}>
+            {rowTotal === 0 ? (
+              <table className="compare-grid compare-grid-bm">
+                <colgroup>
+                  <col className="col-check" />
+                  <col className="col-source" />
+                  <col className="col-action" />
+                  <col className="col-target" />
+                </colgroup>
+                <tbody>
+                  <tr>
+                    <td colSpan={4} className="empty-row">
+                      {emptyMessage}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            ) : (
+              <div className="compare-grid-spacer" style={{ height: rowTotal * ROW_H }}>
+                <table
+                  className="compare-grid compare-grid-bm compare-grid-window"
+                  style={{ top: rowOffset * ROW_H }}
+                >
+                  <colgroup>
+                    <col className="col-check" />
+                    <col className="col-source" />
+                    <col className="col-action" />
+                    <col className="col-target" />
+                  </colgroup>
+                  <tbody>
+                    {rows.map((row) => {
+                      const ads = adsHint(row)
+                      const failed = failedIds.has(row.id)
+                      return (
+                        <tr
+                          key={row.id}
+                          className={`${rowClass(row, failed)} ${selectedRowId === row.id ? 'row-selected' : ''}`}
+                          onClick={() => onSelectRow(row)}
+                          onDoubleClick={() => onRowDoubleClick(row)}
+                          onContextMenu={(event) => openRowMenu(event, row)}
+                        >
+                          <td>
+                            <input
+                              type="checkbox"
+                              checked={row.included}
+                              disabled={row.action === 'Skip'}
+                              onChange={(e) => onToggleIncluded(row.id, e.target.checked)}
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          </td>
+                          <td className="path-cell">
+                            {row.leftPath ?? (row.left ? row.relPath : '—')}
+                            {ads ? <span className="ads-hint"> · {ads}</span> : null}
+                          </td>
+                          <td className="action-cell">
+                            {row.action}
+                            {failed ? <span className="sync-error-hint"> · failed</span> : null}
+                          </td>
+                          <td className="path-cell">{row.rightPath ?? (row.right ? row.relPath : '—')}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       </div>
+      {rowMenu ? (
+        <div
+          className="tree-context-menu"
+          style={{ left: rowMenu.x, top: rowMenu.y }}
+          role="menu"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <CompareInspectMenu
+            sourcePath={rowMenu.leftPath}
+            targetPath={rowMenu.rightPath}
+            onOpen={(path) => {
+              setRowMenu(null)
+              onOpenPath(path)
+            }}
+            onReveal={(path) => {
+              setRowMenu(null)
+              onRevealPath(path)
+            }}
+          />
+        </div>
+      ) : null}
     </section>
   )
 }

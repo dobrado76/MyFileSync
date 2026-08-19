@@ -122,24 +122,28 @@ export function isSystemSkipPath(relPath: string): boolean {
   })
 }
 
+/** Resolve include/exclude once per compare (or pair root), then test each path. */
+export function compilePathFilter(
+  include: string[],
+  exclude: string[],
+  pairRoot?: string,
+): (relPath: string) => boolean {
+  const includeRules = include.filter((p) => !isCommentOrEmpty(p)).map((p) => resolveRule(p, pairRoot))
+  const excludeRules = exclude.filter((p) => !isCommentOrEmpty(p)).map((p) => resolveRule(p, pairRoot))
+  return (relPath: string) => {
+    const normalized = normalizeSlashes(relPath)
+    if (includeRules.length > 0 && !includeRules.some((pattern) => matchPattern(normalized, pattern))) {
+      return false
+    }
+    return !excludeRules.some((pattern) => matchPattern(normalized, pattern))
+  }
+}
+
 export function shouldIncludePath(
   relPath: string,
   include: string[],
   exclude: string[],
   pairRoot?: string,
 ): boolean {
-  const normalized = normalizeSlashes(relPath)
-
-  const includeRules = include.filter((p) => !isCommentOrEmpty(p)).map((p) => resolveRule(p, pairRoot))
-  if (includeRules.length > 0) {
-    const allowed = includeRules.some((pattern) => matchPattern(normalized, pattern))
-    if (!allowed) return false
-  }
-
-  const excluded = exclude.some((pattern) => {
-    if (isCommentOrEmpty(pattern)) return false
-    return matchPattern(normalized, resolveRule(pattern, pairRoot))
-  })
-
-  return !excluded
+  return compilePathFilter(include, exclude, pairRoot)(relPath)
 }

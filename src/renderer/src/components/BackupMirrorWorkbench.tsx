@@ -1,8 +1,10 @@
 import { useCallback, useRef, useState, type PointerEvent } from 'react'
-import type { JobFile, JobSummary } from '@shared/schemas/job'
+import type { JobFile } from '@shared/schemas/job'
 import type { CompareFilter, CompareRow, CompareStats, FolderTreeNode } from '@shared/schemas/compare'
+import { displayTreePath, pairLabelFromLeftPath, type PairTreeLabel } from '@shared/compare/folderTree'
 import { CompareGrid } from './CompareGrid'
 import { FilterManager } from './FilterManager'
+import { JobSettingsPanel } from './JobSettingsPanel'
 import { RowDetailPanel } from './RowDetailPanel'
 import type { LogEntry } from '../store/workbenchStore'
 import type { TreeFolderAction } from './CompareFolderTree'
@@ -13,27 +15,29 @@ const PAIR_LIST_MIN = 40
 const PAIR_SPLIT_RESERVE = 220
 
 type BackupMirrorWorkbenchProps = {
-  jobs: JobSummary[]
   activeJob: JobFile | null
   activePairIndex: number
   mainTab: MainTab
   compareRows: CompareRow[]
+  compareRowOffset: number
+  compareRowTotal: number
   compareFolderTree: FolderTreeNode | null
   comparePathPrefix: string
   compareFilter: CompareFilter
   compareBusy: boolean
   compareStats: CompareStats | null
   syncBusy: boolean
+  syncQueued: boolean
   selectedRow: CompareRow | null
   logs: LogEntry[]
   busy: boolean
   onMainTabChange: (tab: MainTab) => void
-  onSelectJob: (id: string) => void
-  onNewJob: () => void
   onImportJob: () => void
   onChangeJob: (patch: Partial<JobFile>) => void
   onBrowsePath: (index: number, side: 'left' | 'right') => void
   onSetPairPath: (index: number, side: 'left' | 'right', path: string) => void
+  onSetPairEnabled: (index: number, enabled: boolean) => void
+  onSetPairListHeight: (height: number, persist?: boolean) => void
   onVariantChange: (variant: JobFile['variant']) => void
   onAddPair: () => void
   onRemovePair: (index: number) => void
@@ -47,35 +51,42 @@ type BackupMirrorWorkbenchProps = {
   onCancel: () => void
   onFilterChange: (filter: CompareFilter) => void
   onSelectFolder: (path: string) => void
+  onRowsWindowChange: (offset: number, limit: number) => void
   onFolderAction: (action: TreeFolderAction, path: string, deletes: number) => void
+  onOpenPath: (path: string) => void
+  onRevealPath: (path: string) => void
   onToggleIncluded: (rowId: string, included: boolean) => void
   onSelectRow: (row: CompareRow | null) => void
   onPairIndexChange: (index: number) => void
+  syncFailedRowIds: string[]
+  hasSyncErrors: boolean
 }
 
 export function BackupMirrorWorkbench(props: BackupMirrorWorkbenchProps) {
   const {
-    jobs,
     activeJob,
     activePairIndex,
     mainTab,
     compareRows,
+    compareRowOffset,
+    compareRowTotal,
     compareFolderTree,
     comparePathPrefix,
     compareFilter,
     compareBusy,
     compareStats,
     syncBusy,
+    syncQueued,
     selectedRow,
     logs,
     busy,
     onMainTabChange,
-    onSelectJob,
-    onNewJob,
     onImportJob,
     onChangeJob,
     onBrowsePath,
     onSetPairPath,
+    onSetPairEnabled,
+    onSetPairListHeight,
     onVariantChange,
     onAddPair,
     onRemovePair,
@@ -89,72 +100,93 @@ export function BackupMirrorWorkbench(props: BackupMirrorWorkbenchProps) {
     onCancel,
     onFilterChange,
     onSelectFolder,
+    onRowsWindowChange,
     onFolderAction,
+    onOpenPath,
+    onRevealPath,
     onToggleIncluded,
     onSelectRow,
     onPairIndexChange,
+    syncFailedRowIds,
+    hasSyncErrors,
   } = props
 
-  const pair = activeJob?.pairs[activePairIndex]
+  const enabledPairs = activeJob?.pairs.filter((p) => p.enabled) ?? []
+  const pairTreeLabels: PairTreeLabel[] = enabledPairs.map((p) => ({
+    pairId: p.id,
+    label: pairLabelFromLeftPath(p.left),
+  }))
+  const pairSourcePaths = Object.fromEntries(enabledPairs.map((p) => [p.id, p.left]))
+  const pairRoots = enabledPairs.map((p) => ({ id: p.id, left: p.left, right: p.right }))
+  const comparePathLabel =
+    comparePathPrefix && pairTreeLabels.length > 1
+      ? displayTreePath(comparePathPrefix, pairTreeLabels)
+      : comparePathPrefix
   const treeRootLabel =
-    activeJob && activeJob.pairs.length === 1
-      ? pair?.left.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || 'All folders'
+    enabledPairs.length === 1
+      ? enabledPairs[0]?.left.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || 'All folders'
       : 'All folders'
   const fileCount = compareStats?.total ?? compareRows.length
+  const hasSyncWork = (compareStats?.toSync ?? 0) > 0
+  const configLocked = compareBusy || syncBusy
+  const noEnabledPairs = enabledPairs.length === 0
+  const syncDisabled = syncBusy || noEnabledPairs || (!compareBusy && !hasSyncWork)
+  const syncLabel = syncQueued && compareBusy ? 'Queued' : 'Sync'
+  const syncTitle = compareBusy
+    ? syncQueued
+      ? 'Sync is queued — click to cancel queue'
+      : 'Queue sync to run automatically when compare finishes'
+    : hasSyncWork
+      ? 'Run sync for included changes'
+      : 'Nothing to sync — run Compare first'
   const mainColRef = useRef<HTMLDivElement>(null)
   const pairListRef = useRef<HTMLDivElement>(null)
-  const [pairListHeight, setPairListHeight] = useState<number | null>(null)
+  const dragHeightRef = useRef<number | null>(null)
+  const [dragPairListHeight, setDragPairListHeight] = useState<number | null>(null)
   const [pairSplitDragging, setPairSplitDragging] = useState(false)
+  const pairListHeight = dragPairListHeight ?? activeJob?.ui?.pairListHeight ?? null
 
-  const onPairSplitPointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
-    event.preventDefault()
-    const column = mainColRef.current
-    const list = pairListRef.current
-    if (!column || !list) return
-    const startY = event.clientY
-    const startHeight = list.getBoundingClientRect().height
-    const max = Math.max(PAIR_LIST_MIN, column.clientHeight - PAIR_SPLIT_RESERVE)
-    const target = event.currentTarget
-    target.setPointerCapture(event.pointerId)
-    setPairSplitDragging(true)
-    setPairListHeight(startHeight)
+  const onPairSplitPointerDown = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      event.preventDefault()
+      const column = mainColRef.current
+      const list = pairListRef.current
+      if (!column || !list) return
+      const startY = event.clientY
+      const startHeight = list.getBoundingClientRect().height
+      const max = Math.max(PAIR_LIST_MIN, column.clientHeight - PAIR_SPLIT_RESERVE)
+      const target = event.currentTarget
+      target.setPointerCapture(event.pointerId)
+      dragHeightRef.current = startHeight
+      setPairSplitDragging(true)
+      setDragPairListHeight(startHeight)
 
-    const onMove = (move: globalThis.PointerEvent) => {
-      setPairListHeight(Math.min(max, Math.max(PAIR_LIST_MIN, startHeight + move.clientY - startY)))
-    }
-    const onUp = () => {
-      setPairSplitDragging(false)
-      target.removeEventListener('pointermove', onMove)
-      target.removeEventListener('pointerup', onUp)
-      target.removeEventListener('pointercancel', onUp)
-    }
-    target.addEventListener('pointermove', onMove)
-    target.addEventListener('pointerup', onUp)
-    target.addEventListener('pointercancel', onUp)
-  }, [])
+      const onMove = (move: globalThis.PointerEvent) => {
+        const next = Math.min(max, Math.max(PAIR_LIST_MIN, startHeight + move.clientY - startY))
+        dragHeightRef.current = next
+        setDragPairListHeight(next)
+      }
+      const onUp = () => {
+        setPairSplitDragging(false)
+        target.removeEventListener('pointermove', onMove)
+        target.removeEventListener('pointerup', onUp)
+        target.removeEventListener('pointercancel', onUp)
+        const height = dragHeightRef.current
+        dragHeightRef.current = null
+        setDragPairListHeight(null)
+        if (height != null) onSetPairListHeight(height, true)
+      }
+      target.addEventListener('pointermove', onMove)
+      target.addEventListener('pointerup', onUp)
+      target.addEventListener('pointercancel', onUp)
+    },
+    [onSetPairListHeight],
+  )
 
   return (
     <div className="bm-workbench">
       <div className="bm-toolbar">
         <div className="bm-toolbar-left">
-          <label className="bm-field" htmlFor="job-select">
-            <span className="bm-label">Job</span>
-            <select
-              id="job-select"
-              className="bm-control bm-job-dropdown"
-              value={activeJob?.id ?? ''}
-              onChange={(e) => onSelectJob(e.target.value)}
-              title="Switch between saved jobs"
-            >
-              {jobs.length === 0 ? <option value="">No jobs</option> : null}
-              {jobs.map((j) => (
-                <option key={j.id} value={j.id}>
-                  {j.name}
-                </option>
-              ))}
-            </select>
-          </label>
-
           {activeJob ? (
             <label className="bm-field" htmlFor="job-name">
               <span className="bm-label">Name</span>
@@ -162,21 +194,28 @@ export function BackupMirrorWorkbench(props: BackupMirrorWorkbenchProps) {
                 id="job-name"
                 className="bm-control bm-name-input"
                 value={activeJob.name}
+                disabled={configLocked}
                 onChange={(e) => onChangeJob({ name: e.target.value })}
                 placeholder="Job name"
-                title="Rename this job — click Save to keep the change"
+                title={
+                  configLocked
+                    ? 'Finish or cancel compare/sync before renaming this job'
+                    : 'Rename this job — click Save to keep the change'
+                }
               />
             </label>
           ) : null}
 
-          <button type="button" className="button button-sm" onClick={onNewJob} title="Create a new empty job">
-            + New
-          </button>
           <button
             type="button"
             className="button button-sm"
+            disabled={configLocked}
             onClick={onImportJob}
-            title="Import a FreeFileSync, BackupMirror INI, or MyFileSync job file"
+            title={
+              configLocked
+                ? 'Finish or cancel compare/sync before importing a job'
+                : 'Import a FreeFileSync, BackupMirror INI, or MyFileSync job file'
+            }
           >
             Import…
           </button>
@@ -186,18 +225,26 @@ export function BackupMirrorWorkbench(props: BackupMirrorWorkbenchProps) {
               <button
                 type="button"
                 className="button button-sm button-primary"
-                disabled={busy}
+                disabled={busy || configLocked}
                 onClick={onSaveJob}
-                title="Save the current job to disk"
+                title={
+                  configLocked
+                    ? 'Finish or cancel compare/sync before saving job changes'
+                    : 'Save the current job to disk (Ctrl+S)'
+                }
               >
                 Save
               </button>
               <button
                 type="button"
                 className="button button-sm button-danger"
-                disabled={busy}
+                disabled={busy || configLocked}
                 onClick={onDeleteJob}
-                title="Delete this job from the list permanently"
+                title={
+                  configLocked
+                    ? 'Finish or cancel compare/sync before deleting this job'
+                    : 'Delete this job from the list permanently'
+                }
               >
                 Delete job
               </button>
@@ -258,11 +305,13 @@ export function BackupMirrorWorkbench(props: BackupMirrorWorkbenchProps) {
             >
                 <div className="bm-pair-stack">
                   <div className="bm-pair-head">
+                    <span className="bm-pair-enable-spacer" title="Include in Compare and Sync" />
                     <span className="bm-label">Source folder</span>
                     <div className="bm-pair-head-mid">
                     <select
                       className="bm-control bm-variant-select"
                       value={activeJob.variant}
+                      disabled={configLocked}
                       onChange={(e) => onVariantChange(e.target.value as JobFile['variant'])}
                       title="Sync variant: Mirror, Update, Auto, or Two-way"
                     >
@@ -273,6 +322,7 @@ export function BackupMirrorWorkbench(props: BackupMirrorWorkbenchProps) {
                     </select>
                     <select
                       className="bm-control bm-compare-select"
+                      disabled={configLocked}
                       value={
                         activeJob.compare.method === 'content'
                           ? `content:${activeJob.compare.contentHash}`
@@ -313,15 +363,28 @@ export function BackupMirrorWorkbench(props: BackupMirrorWorkbenchProps) {
                     {activeJob.pairs.map((p, i) => (
                       <div
                         key={p.id}
-                        className={`bm-pair-row${i === activePairIndex ? ' bm-pair-row-active' : ''}`}
+                        className={`bm-pair-row${i === activePairIndex ? ' bm-pair-row-active' : ''}${p.enabled ? '' : ' bm-pair-row-off'}`}
                         onClick={() => onPairIndexChange(i)}
                       >
+                        <label
+                          className="bm-pair-enable"
+                          title="Include this pair in Compare and Sync"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={p.enabled}
+                            disabled={configLocked}
+                            onChange={(e) => onSetPairEnabled(i, e.target.checked)}
+                          />
+                        </label>
                         <div className="bm-path-row">
                           <input
                             className="settings-input"
                             type="text"
                             spellCheck={false}
                             autoComplete="off"
+                            disabled={configLocked}
                             value={p.left}
                             title={p.left}
                             placeholder="Source folder"
@@ -332,7 +395,7 @@ export function BackupMirrorWorkbench(props: BackupMirrorWorkbenchProps) {
                           <button
                             type="button"
                             className="button"
-                            disabled={busy}
+                            disabled={busy || configLocked}
                             onClick={(e) => {
                               e.stopPropagation()
                               onBrowsePath(i, 'left')
@@ -345,6 +408,7 @@ export function BackupMirrorWorkbench(props: BackupMirrorWorkbenchProps) {
                           type="button"
                           className="button bm-pair-flip"
                           title="Swap source and target"
+                          disabled={configLocked}
                           onClick={(e) => {
                             e.stopPropagation()
                             onFlipPair(i)
@@ -358,6 +422,7 @@ export function BackupMirrorWorkbench(props: BackupMirrorWorkbenchProps) {
                             type="text"
                             spellCheck={false}
                             autoComplete="off"
+                            disabled={configLocked}
                             value={p.right}
                             title={p.right}
                             placeholder="Target folder"
@@ -368,7 +433,7 @@ export function BackupMirrorWorkbench(props: BackupMirrorWorkbenchProps) {
                           <button
                             type="button"
                             className="button"
-                            disabled={busy}
+                            disabled={busy || configLocked}
                             onClick={(e) => {
                               e.stopPropagation()
                               onBrowsePath(i, 'right')
@@ -382,7 +447,7 @@ export function BackupMirrorWorkbench(props: BackupMirrorWorkbenchProps) {
                             type="button"
                             className="button button-sm"
                             title="Move pair up"
-                            disabled={i === 0}
+                            disabled={configLocked || i === 0}
                             onClick={(e) => {
                               e.stopPropagation()
                               onMovePair(i, -1)
@@ -394,7 +459,7 @@ export function BackupMirrorWorkbench(props: BackupMirrorWorkbenchProps) {
                             type="button"
                             className="button button-sm"
                             title="Move pair down"
-                            disabled={i === activeJob.pairs.length - 1}
+                            disabled={configLocked || i === activeJob.pairs.length - 1}
                             onClick={(e) => {
                               e.stopPropagation()
                               onMovePair(i, 1)
@@ -406,7 +471,7 @@ export function BackupMirrorWorkbench(props: BackupMirrorWorkbenchProps) {
                             type="button"
                             className="button button-sm"
                             title="Remove this folder pair"
-                            disabled={activeJob.pairs.length <= 1}
+                            disabled={configLocked || activeJob.pairs.length <= 1}
                             onClick={(e) => {
                               e.stopPropagation()
                               onRemovePair(i)
@@ -418,7 +483,7 @@ export function BackupMirrorWorkbench(props: BackupMirrorWorkbenchProps) {
                       </div>
                     ))}
                   </div>
-                  <button type="button" className="bm-add-pair" onClick={onAddPair}>
+                  <button type="button" className="bm-add-pair" disabled={configLocked} onClick={onAddPair}>
                     + Add folder pair
                   </button>
                 </div>
@@ -433,14 +498,24 @@ export function BackupMirrorWorkbench(props: BackupMirrorWorkbenchProps) {
 
                 <CompareGrid
                   rows={compareRows}
+                  rowOffset={compareRowOffset}
+                  rowTotal={compareRowTotal}
                   filter={compareFilter}
                   busy={compareBusy || syncBusy}
                   folderTree={compareFolderTree}
                   pathPrefix={comparePathPrefix}
+                  pathPrefixLabel={comparePathLabel}
                   rootLabel={treeRootLabel}
+                  pairSourcePaths={pairSourcePaths}
+                  pairRoots={pairRoots}
+                  syncFailedRowIds={syncFailedRowIds}
+                  hasSyncErrors={hasSyncErrors}
                   onFilterChange={onFilterChange}
                   onSelectFolder={onSelectFolder}
+                  onRowsWindowChange={onRowsWindowChange}
                   onFolderAction={onFolderAction}
+                  onOpenPath={onOpenPath}
+                  onRevealPath={onRevealPath}
                   onToggleIncluded={onToggleIncluded}
                   onSelectRow={onSelectRow}
                   onRowDoubleClick={onSelectRow}
@@ -455,18 +530,20 @@ export function BackupMirrorWorkbench(props: BackupMirrorWorkbenchProps) {
                   <button
                     type="button"
                     className="button button-primary bm-run-btn"
-                    disabled={compareBusy || syncBusy}
+                    disabled={compareBusy || syncBusy || noEnabledPairs}
+                    title={noEnabledPairs ? 'Enable at least one folder pair' : 'Compare enabled folder pairs'}
                     onClick={onCompare}
                   >
                     Compare
                   </button>
                   <button
                     type="button"
-                    className="button button-primary"
-                    disabled={compareBusy || syncBusy || compareRows.length === 0}
+                    className={`button button-primary ${syncQueued && compareBusy ? 'button-sync-queued' : ''}`}
+                    disabled={syncDisabled}
+                    title={syncTitle}
                     onClick={onSync}
                   >
-                    Sync
+                    {syncLabel}
                   </button>
                   <span className="bm-file-count">Files: {fileCount}</span>
                   <div className="bm-run-spacer" />
@@ -478,132 +555,7 @@ export function BackupMirrorWorkbench(props: BackupMirrorWorkbenchProps) {
           )}
 
           {mainTab === 'compare' && (
-            <div className="bm-filters-panel">
-              <label className="settings-label">
-                Compare method
-                <select
-                  className="settings-input"
-                  value={
-                    activeJob.compare.method === 'content'
-                      ? `content:${activeJob.compare.contentHash}`
-                      : 'sizeAndTime'
-                  }
-                  onChange={(e) => {
-                    const value = e.target.value
-                    if (value === 'sizeAndTime') {
-                      onChangeJob({
-                        compare: { ...activeJob.compare, method: 'sizeAndTime' },
-                      })
-                      return
-                    }
-                    onChangeJob({
-                      compare: {
-                        ...activeJob.compare,
-                        method: 'content',
-                        contentHash: value === 'content:sha256' ? 'sha256' : 'md5',
-                      },
-                    })
-                  }}
-                >
-                  <option value="sizeAndTime">Size + date/time (fast)</option>
-                  <option value="content:md5">Content hash — MD5</option>
-                  <option value="content:sha256">Content hash — SHA-256</option>
-                </select>
-              </label>
-              <p className="settings-hint">
-                <strong>Size + date/time</strong> does not hash. <strong>MD5 / SHA-256 content</strong> hashes
-                each file&apos;s bytes. An MD5 stored in ADS is only reused when the cache also recorded
-                that file&apos;s size and date/time and they still match — a hash stream by itself is
-                ignored as stale.
-              </p>
-
-              <label className="check-row">
-                <input
-                  type="checkbox"
-                  checked={activeJob.compare.useAdsCache}
-                  onChange={(e) =>
-                    onChangeJob({ compare: { ...activeJob.compare, useAdsCache: e.target.checked } })
-                  }
-                />
-                Read ADS hash cache only if size + date/time still match
-              </label>
-              <label className="check-row">
-                <input
-                  type="checkbox"
-                  checked={activeJob.ads.writeCacheToAds}
-                  onChange={(e) =>
-                    onChangeJob({ ads: { ...activeJob.ads, writeCacheToAds: e.target.checked } })
-                  }
-                />
-                Write hash cache to ADS (hash + size + date/time; restore timestamps)
-              </label>
-              <label className="check-row">
-                <input
-                  type="checkbox"
-                  checked={activeJob.compare.hashWhenSizeOrTimeDiffers}
-                  onChange={(e) =>
-                    onChangeJob({
-                      compare: { ...activeJob.compare, hashWhenSizeOrTimeDiffers: e.target.checked },
-                    })
-                  }
-                />
-                Hash content only when size or date/time already differs
-              </label>
-              <label className="check-row">
-                <input
-                  type="checkbox"
-                  checked={activeJob.behavior.verifyAfterCopy}
-                  onChange={(e) =>
-                    onChangeJob({ behavior: { ...activeJob.behavior, verifyAfterCopy: e.target.checked } })
-                  }
-                />
-                Verify after copy
-              </label>
-              <label className="check-row">
-                <input
-                  type="checkbox"
-                  checked={activeJob.ads.syncAllStreams}
-                  onChange={(e) => onChangeJob({ ads: { ...activeJob.ads, syncAllStreams: e.target.checked } })}
-                />
-                Sync all alternate data streams
-              </label>
-              <label className="check-row">
-                <input
-                  type="checkbox"
-                  checked={activeJob.delete.useRecycleBin}
-                  onChange={(e) =>
-                    onChangeJob({ delete: { ...activeJob.delete, useRecycleBin: e.target.checked } })
-                  }
-                />
-                Recycle Bin for deletes
-              </label>
-              <label className="check-row">
-                <input
-                  type="checkbox"
-                  checked={activeJob.watch.enabled}
-                  onChange={(e) => onChangeJob({ watch: { ...activeJob.watch, enabled: e.target.checked } })}
-                />
-                Watch folders and auto-sync (RealTimeSync)
-              </label>
-              <label className="settings-label">
-                Compare workers
-                <input
-                  type="number"
-                  min={1}
-                  max={32}
-                  className="settings-input"
-                  value={activeJob.parallelism.compareWorkers}
-                  onChange={(e) =>
-                    onChangeJob({
-                      parallelism: {
-                        ...activeJob.parallelism,
-                        compareWorkers: parseInt(e.target.value, 10) || 4,
-                      },
-                    })
-                  }
-                />
-              </label>
-            </div>
+            <JobSettingsPanel job={activeJob} locked={configLocked} onChange={onChangeJob} />
           )}
 
           {mainTab === 'filters' && (
@@ -613,6 +565,7 @@ export function BackupMirrorWorkbench(props: BackupMirrorWorkbenchProps) {
                 hint="All instances: !Thumbnails, *.tmp, **/.git/** — gitignore-style, relative to each pair root. This path: /!Thumbnails (root only) or models/!Thumbnails (that folder only). Pick This folder / This file to add a single instance."
                 rules={activeJob.filters.exclude}
                 pairRoots={activeJob.pairs.flatMap((p) => [p.left, p.right]).filter(Boolean)}
+                disabled={configLocked}
                 onChange={(exclude) => onChangeJob({ filters: { ...activeJob.filters, exclude } })}
               />
               <FilterManager
@@ -620,6 +573,7 @@ export function BackupMirrorWorkbench(props: BackupMirrorWorkbenchProps) {
                 hint="Leave empty to include everything except the exclude list. If you add include rules, only matching items are scanned."
                 rules={activeJob.filters.include}
                 pairRoots={activeJob.pairs.flatMap((p) => [p.left, p.right]).filter(Boolean)}
+                disabled={configLocked}
                 onChange={(include) => onChangeJob({ filters: { ...activeJob.filters, include } })}
               />
             </div>

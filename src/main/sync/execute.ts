@@ -2,14 +2,15 @@ import type { BrowserWindow } from 'electron'
 import { ok } from '@shared/result'
 import { adsIgnoredStreamNames } from '@shared/compare/classify'
 import type { JobFile } from '@shared/schemas/job'
-import type { PlannedAction, SyncProgress, SyncSummary } from '@shared/schemas/compare'
+import type { PlannedAction, SyncFailure, SyncProgress, SyncSummary } from '@shared/schemas/compare'
 import { rowToPlannedAction } from '../compare/plan'
 import type { CompareRowStore } from '../compare/rowStore'
 import { copyEntry, copyStreamsOnly, createEntry, deleteEntry, moveEntry, type CopyOptions } from './copy'
 import { requestCopyAbort, clearCopyAbort, isCopyAborted } from '../win32/copy'
 import { yieldToEventLoop } from '../win32/nativeLock'
 import { resolvePairRoot, versionBeforeMutation } from './versioning'
-import { pathMatchesPrefix } from '@shared/compare/folderTree'
+import { rowMatchesTreePath } from '@shared/compare/folderTree'
+import { sortSyncActions } from '@shared/sync/order'
 
 export type SyncRunState = {
   syncRunId: string
@@ -22,7 +23,15 @@ export type SyncEventEmitter = (event: SyncEvent) => void
 
 export type SyncEvent =
   | { type: 'sync:progress'; syncRunId: string; progress: SyncProgress }
-  | { type: 'sync:itemDone'; syncRunId: string; rowId: string; ok: boolean; error?: string }
+  | {
+      type: 'sync:itemDone'
+      syncRunId: string
+      rowId: string
+      ok: boolean
+      error?: string
+      hint?: string
+      code?: SyncFailure['code']
+    }
   | { type: 'sync:done'; syncRunId: string; summary: SyncSummary }
 
 const activeRuns = new Map<string, SyncRunState>()
@@ -83,8 +92,9 @@ export async function executeSync(
   store: CompareRowStore,
   emit: SyncEventEmitter,
   pathPrefix = '',
+  rowIds?: readonly string[],
 ): Promise<SyncSummary> {
-  const total = store.getStats().toSync
+  const rowIdFilter = rowIds && rowIds.length > 0 ? new Set(rowIds) : null
   const ignored = adsIgnoredStreamNames(job)
   const state: SyncRunState = {
     syncRunId,
@@ -93,16 +103,18 @@ export async function executeSync(
     progress: {
       phase: 'preparing',
       done: 0,
-      total,
+      total: 0,
       errors: 0,
     },
   }
   cancelAllPending = false
   activeRuns.set(syncRunId, state)
   if (!state.cancelled) clearCopyAbort()
+  if (!rowIdFilter) store.clearSyncErrors()
 
   let succeeded = 0
   let failed = 0
+  const failures: SyncFailure[] = []
   const progress = createSyncProgress(syncRunId, state, emit)
 
   const copyOptions = (): CopyOptions => ({
@@ -116,9 +128,8 @@ export async function executeSync(
     isCancelled: () => state.cancelled || isCopyAborted(),
   })
 
-  const moves: PlannedAction[] = []
-  const copies: PlannedAction[] = []
-  const deletes: PlannedAction[] = []
+  const actions: PlannedAction[] = []
+  const multiPair = job.pairs.filter((p) => p.enabled).length > 1
 
   let planned = 0
   const succeededIds = new Set<string>()
@@ -127,23 +138,19 @@ export async function executeSync(
       state.cancelled = true
       break
     }
-    if (
-      pathPrefix &&
-      !pathMatchesPrefix(row.relPath, pathPrefix) &&
-      !pathMatchesPrefix(row.fromRelPath ?? '', pathPrefix)
-    ) {
+    if (pathPrefix && !rowMatchesTreePath(row, pathPrefix, multiPair)) {
       continue
     }
+    if (rowIdFilter && !rowIdFilter.has(row.id)) continue
     const action = rowToPlannedAction(row, job, job.pairs)
     if (!action) continue
-    if (action.action === 'Move' || action.action === 'Rename') moves.push(action)
-    else if (action.action === 'Delete') deletes.push(action)
-    else copies.push(action)
+    actions.push(action)
     planned++
     if (planned % 20 === 0) await yieldToEventLoop()
   }
 
-  state.progress.total = moves.length + copies.length + deletes.length
+  sortSyncActions(actions)
+  state.progress.total = actions.length
 
   async function runOne(action: PlannedAction, phase: SyncProgress['phase']): Promise<void> {
     await yieldToEventLoop()
@@ -161,7 +168,7 @@ export async function executeSync(
     progress.note(action.relPath, phase)
 
     const result = await runAction(action, job, options)
-    if (state.cancelled || isCopyAborted() || (!result.ok && result.error.code === 'cancelled')) {
+    if (!result.ok && result.error.code === 'cancelled') {
       state.cancelled = true
       return
     }
@@ -169,35 +176,43 @@ export async function executeSync(
     if (result.ok) {
       succeeded++
       succeededIds.add(action.rowId)
+      store.clearSyncError(action.rowId)
     } else {
       failed++
       state.progress.errors++
+      store.markSyncError(action.rowId)
+      const failure: SyncFailure = {
+        rowId: action.rowId,
+        relPath: action.relPath,
+        action: action.action,
+        targetPath: action.destPath ?? action.sourcePath,
+        code: result.error.code,
+        message: result.error.message,
+        hint: result.error.hint,
+      }
+      failures.push(failure)
       emit({
         type: 'sync:itemDone',
         syncRunId,
         rowId: action.rowId,
         ok: false,
         error: result.error.message,
+        hint: result.error.hint,
+        code: result.error.code,
       })
     }
+    if (state.cancelled || isCopyAborted()) state.cancelled = true
   }
 
-  for (const action of moves) {
+  for (const action of actions) {
     if (state.cancelled) break
-    await runOne(action, 'copying')
-  }
-  for (const action of copies) {
-    if (state.cancelled) break
-    await runOne(action, 'copying')
-  }
-  for (const action of deletes) {
-    if (state.cancelled) break
-    await runOne(action, 'deleting')
+    const phase = action.action === 'Delete' ? 'deleting' : 'copying'
+    await runOne(action, phase)
   }
 
   progress.flush()
 
-  if (!state.cancelled && succeededIds.size > 0) {
+  if (succeededIds.size > 0) {
     await store.applyReplacements(succeededIds, new Map())
   }
 
@@ -208,6 +223,7 @@ export async function executeSync(
     succeeded,
     failed,
     cancelled: state.cancelled,
+    failures,
     stats: store.getStats(),
   }
   emit({ type: 'sync:done', syncRunId, summary })
