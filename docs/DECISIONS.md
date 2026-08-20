@@ -28,6 +28,7 @@ Locked product and technical decisions. Update this file when behavior changes.
 | **D23** | Folder pairs live in **one job**. Each pair has `enabled`; Compare and Sync run **only ticked pairs** | Users keep all pairs together but do not have to run every pair every time |
 | **D24** | Pair-list splitter height is **per-job** (`ui.pairListHeight`) and written on drag end | Layout is part of how you work that job; resetting it on every tab switch is noise |
 | **D25** | **Hardware acceleration** is an app setting (`settings.hardwareAcceleration`, default on). Disable runs `app.disableHardwareAcceleration()` **before** `ready`. A change takes effect on the **next launch** | Chromium cannot flip GPU compositing after the process is up; some GPUs need a software fallback |
+| **D26** | Each folder pair has **`pairs[].ads`** (default on). Off skips ADS listing on Compare and extra stream copy on Sync for that pair | Many pairs are `$DATA` only; listing streams on every file is the slow part |
 
 ## Open follow-ups
 

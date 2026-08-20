@@ -102,6 +102,7 @@ export function parseFfsXml(xml: string, sourceName: string): Result<FfsImportRe
       left,
       right,
       enabled: true,
+      ads: true,
     })
   }
 

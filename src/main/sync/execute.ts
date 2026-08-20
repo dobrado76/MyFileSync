@@ -1,7 +1,7 @@
 import type { BrowserWindow } from 'electron'
 import { ok } from '@shared/result'
 import { adsIgnoredStreamNames } from '@shared/compare/classify'
-import type { JobFile } from '@shared/schemas/job'
+import { pairComparesAds, type JobFile } from '@shared/schemas/job'
 import type { PlannedAction, SyncFailure, SyncProgress, SyncSummary } from '@shared/schemas/compare'
 import { rowToPlannedAction } from '../compare/plan'
 import type { CompareRowStore } from '../compare/rowStore'
@@ -163,6 +163,7 @@ export async function executeSync(
     const options = copyOptions()
     if (pair) {
       options.filterRoot = action.direction === 'rightToLeft' ? pair.right : pair.left
+      options.copyAds = pairComparesAds(pair)
     }
 
     progress.note(action.relPath, phase)
@@ -249,6 +250,8 @@ async function runAction(action: PlannedAction, job: JobFile, copyOptions: CopyO
       return copyEntry(action, copyOptions)
     }
     case 'UpdateStreamsOnly': {
+      const pair = job.pairs.find((p) => p.id === action.pairId)
+      if (pair && !pairComparesAds(pair)) return ok(undefined)
       if (!job.ads.syncAllStreams) return ok(undefined)
       if (action.destPath) {
         const pairRoot = resolvePairRoot(action.pairId, action.destPath, job)

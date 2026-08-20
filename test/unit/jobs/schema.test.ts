@@ -25,9 +25,20 @@ describe('enabledJobPairs', () => {
   it('omits unticked pairs from compare and sync', () => {
     const job = createDefaultJob('pairs')
     job.pairs = [
-      { id: 'on', left: 'D:\\A', right: 'E:\\A', enabled: true },
-      { id: 'off', left: 'D:\\B', right: 'E:\\B', enabled: false },
+      { id: 'on', left: 'D:\\A', right: 'E:\\A', enabled: true, ads: true },
+      { id: 'off', left: 'D:\\B', right: 'E:\\B', enabled: false, ads: true },
     ]
     expect(enabledJobPairs(job).map((p) => p.id)).toEqual(['on'])
+  })
+})
+
+describe('pair ads', () => {
+  it('defaults ADS on for older job files', () => {
+    const job = createDefaultJob('ads')
+    const parsed = jobSchema.parse({
+      ...job,
+      pairs: [{ id: 'legacy', left: 'D:\\A', right: 'E:\\A', enabled: true }],
+    })
+    expect(parsed.pairs[0]?.ads).toBe(true)
   })
 })

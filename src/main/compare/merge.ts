@@ -1,6 +1,6 @@
 import path from 'node:path'
 import { classifyPair } from '@shared/compare/classify'
-import type { JobFile, JobPair } from '@shared/schemas/job'
+import { pairComparesAds, type JobFile, type JobPair } from '@shared/schemas/job'
 import type { CompareRow, SideRecord } from '@shared/schemas/compare'
 import { yieldToEventLoop } from '../win32/nativeLock'
 import { walkSide } from './walk'
@@ -31,6 +31,7 @@ export async function walkPair(
     fastFolderCompare: job.compare.fastFolderCompare,
     folderStatStreamNames: job.ads.cacheStreamNames.folderStats,
     archiveFlagScanOnly: job.behavior.archiveFlagScanOnly,
+    listAds: pairComparesAds(pair),
     isCancelled,
   }
 

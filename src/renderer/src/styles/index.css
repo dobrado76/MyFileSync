@@ -972,7 +972,7 @@ textarea:disabled {
 .bm-pair-head,
 .bm-pair-row {
   display: grid;
-  grid-template-columns: 1.25rem minmax(0, 1fr) auto minmax(0, 1fr) auto;
+  grid-template-columns: 1.25rem minmax(0, 1fr) auto minmax(0, 1fr) 2.1rem auto;
   gap: 0.4rem;
   align-items: center;
 }
@@ -1027,13 +1027,23 @@ textarea:disabled {
 }
 
 .bm-pair-enable,
-.bm-pair-enable-spacer {
+.bm-pair-enable-spacer,
+.bm-pair-ads,
+.bm-pair-ads-head {
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-.bm-pair-enable input {
+.bm-pair-ads-head {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--fg-muted);
+}
+
+.bm-pair-enable input,
+.bm-pair-ads input {
   margin: 0;
   cursor: pointer;
 }

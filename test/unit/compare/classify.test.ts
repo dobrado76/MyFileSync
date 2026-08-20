@@ -31,6 +31,20 @@ describe('classify', () => {
     expect(pairIsEqual(undefined, left, job)).toBe(false)
   })
 
+  it('ignores ADS when the pair has ads unchecked', () => {
+    const offJob = createDefaultJob('ads-off')
+    offJob.pairs = [{ id: 'pair', left: 'D:\\A', right: 'E:\\A', enabled: true, ads: false }]
+    const left = side({
+      relPath: 'a.txt',
+      adsManifest: [{ name: 'parameters', size: 10 }],
+    })
+    const right = side({ relPath: 'a.txt' })
+    const row = classifyPair('pair', 'a.txt', left, right, offJob)
+    expect(row.category).toBe('equal')
+    expect(row.action).toBe('Skip')
+    expect(pairIsEqual(left, right, offJob, 'pair')).toBe(true)
+  })
+
   it('detects ADS-only diff', () => {
     const left = side({
       relPath: 'a.txt',

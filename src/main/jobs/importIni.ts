@@ -43,6 +43,7 @@ export async function importIni(filePath: string): Promise<Result<IniImportResul
         left,
         right,
         enabled,
+        ads: true,
       })
       continue
     }

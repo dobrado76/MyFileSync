@@ -37,6 +37,7 @@ type BackupMirrorWorkbenchProps = {
   onBrowsePath: (index: number, side: 'left' | 'right') => void
   onSetPairPath: (index: number, side: 'left' | 'right', path: string) => void
   onSetPairEnabled: (index: number, enabled: boolean) => void
+  onSetPairAds: (index: number, ads: boolean) => void
   onSetPairListHeight: (height: number, persist?: boolean) => void
   onVariantChange: (variant: JobFile['variant']) => void
   onAddPair: () => void
@@ -86,6 +87,7 @@ export function BackupMirrorWorkbench(props: BackupMirrorWorkbenchProps) {
     onBrowsePath,
     onSetPairPath,
     onSetPairEnabled,
+    onSetPairAds,
     onSetPairListHeight,
     onVariantChange,
     onAddPair,
@@ -349,6 +351,9 @@ export function BackupMirrorWorkbench(props: BackupMirrorWorkbenchProps) {
                     </select>
                     </div>
                     <span className="bm-label">Target folder</span>
+                    <span className="bm-pair-ads-head" title="Compare and sync alternate data streams for this pair">
+                      ADS
+                    </span>
                     <span className="bm-pair-head-actions" />
                   </div>
                   <div
@@ -442,6 +447,18 @@ export function BackupMirrorWorkbench(props: BackupMirrorWorkbenchProps) {
                             …
                           </button>
                         </div>
+                        <label
+                          className="bm-pair-ads"
+                          title="Compare and sync alternate data streams for this pair. Off is faster when you do not need ADS."
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={p.ads !== false}
+                            disabled={configLocked}
+                            onChange={(e) => onSetPairAds(i, e.target.checked)}
+                          />
+                        </label>
                         <div className="bm-pair-row-actions">
                           <button
                             type="button"

@@ -51,6 +51,7 @@ export default function App() {
     flipPair,
     setPairPath,
     setPairEnabled,
+    setPairAds,
     setPairListHeight,
     clearCompareList,
     browsePairPath,
@@ -195,6 +196,7 @@ export default function App() {
         onBrowsePath={(index, side) => void browsePairPath(index, side)}
         onSetPairPath={setPairPath}
         onSetPairEnabled={setPairEnabled}
+        onSetPairAds={setPairAds}
         onSetPairListHeight={setPairListHeight}
         onVariantChange={(variant) => updateActiveJob({ variant })}
         onAddPair={addPair}

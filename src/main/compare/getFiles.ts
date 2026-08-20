@@ -6,7 +6,7 @@ import { compilePathFilter, isSystemSkipPath } from '@shared/compare/filters'
 import { classifyPair, pairIsEqual } from '@shared/compare/classify'
 import type { AdsManifest } from '@shared/ads/paths'
 import type { CompareRow, SideRecord, SideSummary } from '@shared/schemas/compare'
-import type { JobFile, JobPair } from '@shared/schemas/job'
+import { pairComparesAds, type JobFile, type JobPair } from '@shared/schemas/job'
 import { readFileHashCache, writeFileHashCache, readFolderStats } from '../ads/cache'
 import { listStreamsSync } from '../ads/list'
 import { canSkipSubtree } from './fastFolder'
@@ -50,6 +50,7 @@ export async function getFiles(options: GetFilesOptions): Promise<GetFilesResult
   const leftRoot = options.pair.left
   const rightRoot = options.pair.right
   const job = options.job
+  const checkAds = pairComparesAds(options.pair)
   const hashContent = job.compare.method === 'content' && job.compare.contentHash !== 'none'
   const includeLeft = compilePathFilter(job.filters.include, job.filters.exclude, leftRoot)
   const includeRight =
@@ -72,7 +73,7 @@ export async function getFiles(options: GetFilesOptions): Promise<GetFilesResult
   }
 
   function diffRow(relPath: string, left?: SideRecord, right?: SideRecord): CompareRow | undefined {
-    if (!twoWayPromotesEquals && pairIsEqual(left, right, job)) {
+    if (!twoWayPromotesEquals && pairIsEqual(left, right, job, options.pair.id)) {
       equalCount++
       return undefined
     }
@@ -133,6 +134,7 @@ export async function getFiles(options: GetFilesOptions): Promise<GetFilesResult
     }
 
     if (
+      checkAds &&
       job.compare.fastFolderCompare &&
       job.ads.writeCacheToAds &&
       process.platform === 'win32'
@@ -176,8 +178,8 @@ export async function getFiles(options: GetFilesOptions): Promise<GetFilesResult
       const rightEnt = rightEntries.get(leftEnt.name.toLowerCase())
       const rightOk = Boolean(rightEnt && rightEnt.isDir && !rightEnt.isSymlink)
 
-      const leftRec = toRecord(relPath, leftAbs, leftEnt, rightOk)
-      const rightRec = rightOk ? toRecord(relPath, rightAbs, rightEnt!, true) : undefined
+      const leftRec = toRecord(relPath, leftAbs, leftEnt, rightOk && checkAds)
+      const rightRec = rightOk ? toRecord(relPath, rightAbs, rightEnt!, checkAds) : undefined
       const row = diffRow(relPath, leftRec, rightRec)
       if (row) await options.onDiff(row)
       if (!rightOk) continue
@@ -202,15 +204,15 @@ export async function getFiles(options: GetFilesOptions): Promise<GetFilesResult
       const rightOk = Boolean(rightEnt && !rightEnt.isDir && !rightEnt.isSymlink)
       const sizeTimeEqual =
         rightOk && leftEnt.size === rightEnt!.size && leftEnt.mtimeMs === rightEnt!.mtimeMs
-      const wantAds = Boolean(sizeTimeEqual)
+      const wantAds = Boolean(sizeTimeEqual && checkAds)
       const wantHash = hashContent && sizeTimeEqual
 
       const leftRec = wantHash
-        ? await toRecordHashed(relPath, leftAbs, leftEnt, wantAds, job)
+        ? await toRecordHashed(relPath, leftAbs, leftEnt, wantAds, job, checkAds)
         : toRecord(relPath, leftAbs, leftEnt, wantAds)
       const rightRec = rightOk
         ? wantHash
-          ? await toRecordHashed(relPath, rightAbs, rightEnt!, wantAds, job)
+          ? await toRecordHashed(relPath, rightAbs, rightEnt!, wantAds, job, checkAds)
           : toRecord(relPath, rightAbs, rightEnt!, wantAds)
         : undefined
       const row = diffRow(relPath, leftRec, rightRec)
@@ -321,10 +323,18 @@ async function toRecordHashed(
   meta: DirEntry,
   wantAds: boolean,
   job: JobFile,
+  useAdsCache: boolean,
 ): Promise<SideRecord> {
   const record = toRecord(relPath, absPath, meta, wantAds)
   try {
-    record.primaryHash = await resolveFileHash(absPath, meta.size, meta.mtimeMs, meta.atimeMs, job)
+    record.primaryHash = await resolveFileHash(
+      absPath,
+      meta.size,
+      meta.mtimeMs,
+      meta.atimeMs,
+      job,
+      useAdsCache,
+    )
   } catch {
     record.primaryHash = undefined
   }
@@ -337,16 +347,17 @@ async function resolveFileHash(
   mtimeMs: number,
   atimeMs: number,
   job: JobFile,
+  useAdsCache: boolean,
 ): Promise<string> {
   const algorithm: 'md5' | 'sha256' = job.compare.contentHash === 'sha256' ? 'sha256' : 'md5'
-  if (job.compare.useAdsCache && process.platform === 'win32') {
+  if (useAdsCache && job.compare.useAdsCache && process.platform === 'win32') {
     const cached = await readFileHashCache(absPath, job.ads.cacheStreamNames.fileHash, size, mtimeMs)
     if (cached.ok && cached.value) return cached.value
   }
 
   const hash = await hashFileStreaming(absPath, algorithm)
 
-  if (job.ads.writeCacheToAds && process.platform === 'win32') {
+  if (useAdsCache && job.ads.writeCacheToAds && process.platform === 'win32') {
     await writeFileHashCache(
       absPath,
       job.ads.cacheStreamNames.fileHash,

@@ -1,6 +1,6 @@
 {
   "name": "myfilesync",
-  "version": "0.1.25",
+  "version": "0.1.26",
   "description": "Windows-first folder sync with NTFS Alternate Data Stream fidelity",
   "main": "./out/main/index.js",
   "author": "",
@@ -12,7 +12,7 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "dist": "node scripts/bump-patch.mjs && npm run dist:nobump",
-    "dist:nobump": "npm run build && node scripts/prepare-dist.mjs && electron-builder --win && node scripts/prune-old-installers.mjs",
+    "dist:nobump": "npm run build && node scripts/prepare-dist.mjs && node scripts/electron-builder-win.mjs && node scripts/prune-old-installers.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.node.json",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -69,13 +69,15 @@
     "asarUnpack": [
       "**/*.node"
     ],
+    "forceCodeSigning": false,
     "win": {
       "icon": "build/icon.ico",
       "target": [
         "nsis"
       ],
       "artifactName": "MyFileSync-Setup-${version}.${ext}",
-      "signExecutable": false
+      "signExecutable": false,
+      "verifyUpdateCodeSignature": false
     },
     "nsis": {
       "installerIcon": "build/icon.ico",

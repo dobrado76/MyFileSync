@@ -1,9 +1,13 @@
 import { manifestsEqual, sortManifest, withoutIgnoredStreams, type AdsManifest } from '../ads/paths'
 import type { CompareCategory, CompareFilter, CompareRow, CompareStats, SideRecord, SideSummary, SyncActionType, SyncDirection, AdsDelta } from '../schemas/compare'
-import type { JobFile } from '../schemas/job'
+import { pairComparesAds, type JobFile } from '../schemas/job'
 
 /** Streams compare/sync should ignore: exclude list, and app-cache streams unless the job writes them. */
-export function adsIgnoredStreamNames(job: JobFile): readonly string[] | 'all' {
+export function adsIgnoredStreamNames(job: JobFile, pairId?: string): readonly string[] | 'all' {
+  if (pairId) {
+    const pair = job.pairs.find((item) => item.id === pairId)
+    if (pair && !pairComparesAds(pair)) return 'all'
+  }
   if (!job.ads.syncAllStreams) return 'all'
   const names = [...job.ads.excludeStreams]
   if (!job.ads.writeCacheToAds) {
@@ -57,11 +61,12 @@ export function pairIsEqual(
   left: SideRecord | undefined,
   right: SideRecord | undefined,
   job: JobFile,
+  pairId?: string,
 ): boolean {
   if (!left || !right) return false
   const hashContent =
     job.compare.method === 'content' || job.compare.hashWhenSizeOrTimeDiffers
-  return recordsEqual(left, right, hashContent, adsIgnoredStreamNames(job))
+  return recordsEqual(left, right, hashContent, adsIgnoredStreamNames(job, pairId))
 }
 
 export function recordsEqual(
@@ -95,7 +100,11 @@ export function classifyPair(
   right: SideRecord | undefined,
   job: JobFile,
 ): CompareRow {
-  const adsDelta = computeAdsDelta(left?.adsManifest, right?.adsManifest, adsIgnoredStreamNames(job))
+  const adsDelta = computeAdsDelta(
+    left?.adsManifest,
+    right?.adsManifest,
+    adsIgnoredStreamNames(job, pairId),
+  )
   const hashContent =
     job.compare.method === 'content' ||
     (job.compare.hashWhenSizeOrTimeDiffers && Boolean(left && right))

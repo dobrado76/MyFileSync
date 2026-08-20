@@ -186,6 +186,7 @@ type WorkbenchState = {
   flipPair: (index: number) => void
   setPairPath: (index: number, side: 'left' | 'right', path: string) => void
   setPairEnabled: (index: number, enabled: boolean) => void
+  setPairAds: (index: number, ads: boolean) => void
   setPairListHeight: (height: number, persist?: boolean) => void
   clearCompareList: () => void
   browsePairPath: (index: number, side: 'left' | 'right') => Promise<void>
@@ -518,7 +519,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
         ...job,
         pairs: [
           ...job.pairs,
-          { id: crypto.randomUUID(), left: '', right: '', enabled: true },
+          { id: crypto.randomUUID(), left: '', right: '', enabled: true, ads: true },
         ],
       },
       activePairIndex: job.pairs.length,
@@ -591,6 +592,20 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       activeJob: {
         ...activeJob,
         pairs: activeJob.pairs.map((p, i) => (i === index ? { ...p, enabled } : p)),
+      },
+      activePairIndex: index,
+    })
+    void persistActiveJobQuiet(get, set)
+  },
+
+  setPairAds: (index, ads) => {
+    if (isJobConfigLocked(get().compareBusy, get().syncBusy)) return
+    const { activeJob } = get()
+    if (!activeJob || !activeJob.pairs[index]) return
+    set({
+      activeJob: {
+        ...activeJob,
+        pairs: activeJob.pairs.map((p, i) => (i === index ? { ...p, ads } : p)),
       },
       activePairIndex: index,
     })

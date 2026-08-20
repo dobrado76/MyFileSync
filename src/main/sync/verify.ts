@@ -18,6 +18,7 @@ export async function verifyCopy(
   source: string,
   dest: string,
   algorithm: VerifyAlgorithm,
+  options?: { verifyAds?: boolean },
 ): Promise<Result<void>> {
   try {
     const [sourceStat, destStat] = await Promise.all([fs.stat(source), fs.stat(dest)])
@@ -35,7 +36,7 @@ export async function verifyCopy(
       return ioError('Verify failed — destination hash does not match source.')
     }
 
-    if (process.platform === 'win32') {
+    if (options?.verifyAds !== false && process.platform === 'win32') {
       const sourceManifest = await listStreams(source)
       const destManifest = await listStreams(dest)
       if (!sourceManifest.ok) return sourceManifest

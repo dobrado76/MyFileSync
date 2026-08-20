@@ -134,7 +134,7 @@ export function classifyTwoWayPair(
   job: JobFile,
   prevStates?: { left?: FileState; right?: FileState },
 ): CompareRow {
-  const ignored = adsIgnoredStreamNames(job)
+  const ignored = adsIgnoredStreamNames(job, pairId)
   const adsDelta = computeAdsDelta(left?.adsManifest, right?.adsManifest, ignored)
   const hashContent =
     job.compare.method === 'content' ||

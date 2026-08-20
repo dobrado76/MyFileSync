@@ -148,6 +148,16 @@ export function JobSettingsPanel({ job, locked, onChange }: JobSettingsPanelProp
       ),
     },
     {
+      id: 'ads-pair',
+      keywords: 'pair ads checkbox skip streams faster compare sync',
+      node: (
+        <p className="settings-hint">
+          Each folder pair has its own <strong>ADS</strong> checkbox on Options. Untick it when that
+          pair does not need alternate streams — Compare and Sync skip stream work for that pair.
+        </p>
+      ),
+    },
+    {
       id: 'recycle',
       keywords: 'recycle bin deletes trash recyclebin safety',
       node: (

@@ -28,10 +28,11 @@ Work since **0.1.0** (not a new tagged release yet).
 - Right-click a compare result or folder tree node to Open it (Windows default app) or Reveal it (`mfe://reveal`), on source and/or target.
 - Search settings on the Compare tab and in the Settings modal — type to narrow the list, no Search button.
 - Settings: hardware acceleration (GPU) toggle. Off uses software rendering; restart to apply.
+- Each folder pair has an **ADS** checkbox (saved on the job, default on). Off skips alternate-stream compare and extra stream copy for that pair.
 
 ### Changed
 
-- Windows installer builds skip Authenticode signing (`signExecutable: false`). Icon and version resources are still written.
+- Windows installer builds skip Authenticode signing. The dist script does not search for a certificate. Icon and version resources are still written.
 
 ### Fixed
 

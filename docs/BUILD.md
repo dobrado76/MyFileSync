@@ -50,4 +50,4 @@ GitHub Actions on `windows-latest` runs `npm run check`. Tag-push installer atta
 
 Semantic versioning in `package.json`. `npm run dist` increments the patch (`Z`) before building so each installer is a new `MyFileSync-Setup-X.Y.Z.exe`. Use `npm run dist:nobump` to rebuild the same version. Display uses short form where patch is zero (for example `0.1.0` → **v0.1**). Job schema `version` field is independent of app semver.
 
-Windows builds do **not** Authenticode-sign the exe or installer (`win.signExecutable: false`). Icon and version resources are still written.
+Windows builds do **not** Authenticode-sign the exe or installer. `win.signExecutable` is false, `forceCodeSigning` is false, and `CSC_IDENTITY_AUTO_DISCOVERY` is turned off so electron-builder does not search for a certificate. Icon and version resources are still written.

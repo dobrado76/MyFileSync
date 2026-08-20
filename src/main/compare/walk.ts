@@ -24,6 +24,7 @@ export type WalkOptions = {
   fastFolderCompare: boolean
   folderStatStreamNames: readonly string[]
   archiveFlagScanOnly: boolean
+  listAds?: boolean
   onProgress?: (currentPath: string) => void
   isCancelled?: () => boolean
 }
@@ -56,6 +57,7 @@ async function walkDirectory(
   seen.add(seenKey)
 
   if (
+    options.listAds !== false &&
     options.fastFolderCompare &&
     options.writeCacheToAds &&
     options.otherRoot &&
@@ -106,7 +108,7 @@ async function walkDirectory(
 
     const isDir = stat.isDirectory()
     let adsManifest: AdsManifest = []
-    if (process.platform === 'win32') {
+    if (options.listAds !== false && process.platform === 'win32') {
       try {
         const adsResult = await listStreams(absPath)
         if (adsResult.ok) adsManifest = adsResult.value
@@ -150,7 +152,7 @@ async function resolveFileHash(
   atimeMs: number,
   options: WalkOptions,
 ): Promise<string> {
-  if (options.useAdsCache && process.platform === 'win32') {
+  if (options.listAds !== false && options.useAdsCache && process.platform === 'win32') {
     const cached = await readFileHashCache(absPath, options.hashCacheStreamName, size, mtimeMs)
     if (cached.ok && cached.value) {
       return cached.value
@@ -159,7 +161,7 @@ async function resolveFileHash(
 
   const hash = await hashFileStreaming(absPath, options.hashAlgorithm)
 
-  if (options.writeCacheToAds && process.platform === 'win32') {
+  if (options.listAds !== false && options.writeCacheToAds && process.platform === 'win32') {
     await writeFileHashCache(absPath, options.hashCacheStreamName, { hash, size, mtimeMs }, atimeMs)
   }
 

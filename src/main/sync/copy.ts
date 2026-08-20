@@ -27,8 +27,14 @@ export type CopyOptions = {
   vssEnabled?: boolean
   filters?: JobFile['filters']
   filterRoot?: string
+  /** Extra named-stream copy. CopyFileEx still copies ADS on NTFS→NTFS. */
+  copyAds?: boolean
   onProgress?: (relPath: string) => void
   isCancelled?: () => boolean
+}
+
+function shouldCopyAds(options: CopyOptions): boolean {
+  return options.copyAds !== false
 }
 
 function syncAborted(options: CopyOptions): boolean {
@@ -67,8 +73,10 @@ async function copyFile(source: string, dest: string, options: CopyOptions): Pro
       const destStat = await fs.lstat(dest)
       const srcStat = await fs.lstat(source)
       if (destStat.size === srcStat.size && destStat.mtimeMs === srcStat.mtimeMs && !destStat.isDirectory()) {
-        const streams = await copyStreams(source, dest, streamCopyOptions(options))
-        if (!streams.ok) return streams
+        if (shouldCopyAds(options)) {
+          const streams = await copyStreams(source, dest, streamCopyOptions(options))
+          if (!streams.ok) return streams
+        }
         return ok(undefined)
       }
     } catch {
@@ -89,7 +97,9 @@ async function copyFile(source: string, dest: string, options: CopyOptions): Pro
         if (!times.ok) return times
         await applyReadOnlyFromSource(source, dest)
         if (options.verifyAfterCopy) {
-          const verified = await verifyCopy(source, dest, options.hashAlgorithm ?? 'md5')
+          const verified = await verifyCopy(source, dest, options.hashAlgorithm ?? 'md5', {
+            verifyAds: shouldCopyAds(options),
+          })
           if (!verified.ok) return verified
         }
         return ok(undefined)
@@ -111,9 +121,11 @@ async function copyFile(source: string, dest: string, options: CopyOptions): Pro
 
     await fs.copyFile(source, dest)
 
-    const streams = await copyStreams(source, dest, streamCopyOptions(options))
-    if (!streams.ok) {
-      return streams
+    if (shouldCopyAds(options)) {
+      const streams = await copyStreams(source, dest, streamCopyOptions(options))
+      if (!streams.ok) {
+        return streams
+      }
     }
 
     if (process.platform === 'win32') {
@@ -123,7 +135,9 @@ async function copyFile(source: string, dest: string, options: CopyOptions): Pro
     await applyReadOnlyFromSource(source, dest)
 
     if (options.verifyAfterCopy) {
-      const verified = await verifyCopy(source, dest, options.hashAlgorithm ?? 'md5')
+      const verified = await verifyCopy(source, dest, options.hashAlgorithm ?? 'md5', {
+        verifyAds: shouldCopyAds(options),
+      })
       if (!verified.ok) return verified
     }
 
@@ -153,7 +167,7 @@ async function copyTree(
     await fs.mkdir(dest, { recursive: true })
     const unlocked = await clearReadOnlyIfExists(dest)
     if (!unlocked.ok) return unlocked
-    if (process.platform === 'win32') {
+    if (shouldCopyAds(options) && process.platform === 'win32') {
       const dirStreams = await copyStreams(source, dest, streamCopyOptions(options))
       if (!dirStreams.ok) return dirStreams
     }
@@ -234,6 +248,8 @@ export async function copyStreamsOnly(
   if (!action.sourcePath || !action.destPath) {
     return ioError('Stream update is missing source or destination path.')
   }
+
+  if (options && !shouldCopyAds(options)) return ok(undefined)
 
   const unlocked = await clearReadOnlyIfExists(action.destPath)
   if (!unlocked.ok) return unlocked

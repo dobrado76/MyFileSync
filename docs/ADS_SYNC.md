@@ -125,6 +125,8 @@ When both sides have streams the other lacks:
 | `cacheStreamNames.fileHash` | `"MD5"` |
 | `cacheStreamNames.folderStats` | BackupMirror set |
 
+**Per-pair ADS** (`pairs[].ads`, default on): when off, Compare does not list streams for that pair and Sync skips extra stream copy / `UpdateStreamsOnly`. CopyFileEx on NTFS→NTFS may still copy streams with the file body.
+
 **Compare and sync use the same ignore list.** Excluded streams (and compare-cache streams when `writeCacheToAds` is false) are not counted as adsDiff and are not copied or deleted. Otherwise a default `Zone.Identifier` exclude would leave every downloaded file “different” forever.
 
 When `writeCacheToAds` is false, known cache stream names are ignored so leftover BackupMirror `MD5` / folder-stat streams do not fill the change list.

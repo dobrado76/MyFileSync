@@ -30,7 +30,8 @@ userData/
       "id": "pair-1",
       "left": "D:\\!Dev",
       "right": "W:\\!Backup\\!Dev",
-      "enabled": true
+      "enabled": true,
+      "ads": true
     }
   ],
   "variant": "mirror",
@@ -79,6 +80,7 @@ userData/
 | Field | Values | Notes |
 |-------|--------|-------|
 | `pairs[].enabled` | boolean | Compare and Sync run only ticked pairs. Keep unused pairs in the same job. |
+| `pairs[].ads` | boolean | Default true. Off skips ADS compare and extra stream copy for that pair. |
 | `ui.pairListHeight` | number (px) | Folder-pair list splitter height. Written when you release the splitter. |
 | `variant` | `mirror` \| `update` \| `twoWay` \| `automatic` | `twoWay` uses the sync DB |
 | `compare.method` | `sizeAndTime` \| `content` | Content uses `contentHash` |

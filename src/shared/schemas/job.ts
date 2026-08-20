@@ -23,6 +23,8 @@ export const jobPairSchema = z.object({
   leftSftp: sftpConfigSchema.optional(),
   rightSftp: sftpConfigSchema.optional(),
   enabled: z.boolean(),
+  /** Compare and extra stream copy for this pair. Off skips ADS work (faster). Default on. */
+  ads: z.boolean().default(true),
 })
 
 export const jobUiSchema = z.object({
@@ -121,6 +123,7 @@ export function createDefaultJob(name = 'New job'): JobFile {
         left: '',
         right: '',
         enabled: true,
+        ads: true,
       },
     ],
     variant: 'mirror',
@@ -182,6 +185,11 @@ export function createDefaultJob(name = 'New job'): JobFile {
 
 export function enabledJobPairs(job: JobFile): JobPair[] {
   return job.pairs.filter((pair) => pair.enabled)
+}
+
+/** Missing `ads` on older in-memory pairs counts as on. */
+export function pairComparesAds(pair: JobPair): boolean {
+  return pair.ads !== false
 }
 
 export function toJobSummary(job: JobFile): JobSummary {
