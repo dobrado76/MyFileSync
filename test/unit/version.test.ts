@@ -31,7 +31,7 @@ describe('version', () => {
   })
 
   it('formats display version', () => {
-    expect(formatDisplayVersion('0.1.0')).toBe('v0.1')
+    expect(formatDisplayVersion('0.2.0')).toBe('v0.2')
     expect(formatDisplayVersion('0.1.1')).toBe('v0.1.1')
   })
 })

@@ -4,7 +4,9 @@ All notable changes to MyFileSync are documented here.
 
 ## [Unreleased]
 
-Work since **0.1.0** (not a new tagged release yet).
+## [0.2.0] — 2026-08-23
+
+First full compare/sync release after v0.1. See [RELEASE_NOTES.md](RELEASE_NOTES.md).
 
 ### Added
 
@@ -33,8 +35,9 @@ Work since **0.1.0** (not a new tagged release yet).
 - Compare and Sync use a **progress panel** (counts, rates, graphs). Minimize it to the status-bar string; **Progress** on the status bar opens it again. The last choice is remembered.
 - **Export…** writes the current job as a FreeFileSync `.ffs_gui` or `.ffs_batch` file (pairs, variant, compare method, Recycle Bin, filters).
 - Confirm mirror deletes has **Don’t show again**. Turn the prompt back on in Settings.
-- Compare can skip unchanged folders using the **NTFS change journal** (`compare.useUsnJournal`, default on). First completed Compare is a full walk and saves a journal cursor; later runs re-check only journal hits plus leftover diffs. Falls back to a full walk if the journal wrapped, was recreated, or is not NTFS.
+- Compare can skip unchanged folders using the **NTFS change journal** (`compare.useUsnJournal`, default on). Cursor in AppData `compare-usn/pairs/` keyed by compare settings + left/right paths (shared across jobs). Falls back to a full walk when the journal cannot be used.
 - Compare is two-phase: **Enumerating…** (exact item count) then **Comparing…** with a real progress total. Directory listings from the first pass are reused.
+- Enumerate phase shows USN mode in the **window title** (`change journal` vs `full walk — reason`); file paths no longer overwrite that line.
 
 ### Changed
 
@@ -45,13 +48,14 @@ Work since **0.1.0** (not a new tagged release yet).
 
 - `npm run dist` no longer kills a running installed MyFileSync. Only build lockers under `release/` are stopped.
 - After Compare or Sync, the USN cursor is saved at the **current** journal head. Dest copies and listing closes no longer make the next Compare look like a full walk.
-- Ticking a second folder pair no longer invalidates every pair’s change-journal cursor (that was a full walk).
-- USN journal cursor is stored in AppData (`compare-usn/pairs/`) keyed by compare settings + left/right paths — shared across jobs with the same pair. Legacy per-job files still migrate on read.
-
+- Ticking a second folder pair no longer invalidates every pair’s change-journal cursor.
+- USN cursor stored in AppData (`compare-usn/pairs/`), not on pair-folder ADS (writing ADS poisoned the journal).
+- **Sync always refreshes** the USN cursor for enabled pairs at completion (no prior cursor file required; never re-saves a stale cursor if live snapshot fails).
+- USN load matches pair paths with `\\?\` normalization; filter keys ignore include/exclude order; legacy cursors match by folder paths not only pair id.
+- USN skip reasons in the window title are specific (e.g. cursor USN vs journal `firstUsn`, filter field diffs) instead of generic “settings changed”.
 - Sync ignored **Copy parallelism** and copied one file at a time. It now runs that many copies at once (default 6). Create no longer lstats the source (that opens `$DATA` and wakes antivirus).
-- Progress graphs dropped the start of a long run (they kept only the last ~minute of samples). They now keep the whole run and coarsen older points, never below **one sample per physical plot pixel**. Coming back from minimize records the current totals so the gap is not a blank. Compare starts a new graph at Comparing (X axis begins at enumerate elapsed, e.g. 59:00) so the hour of enumerating is not an empty left side.
+- Progress graphs dropped the start of a long run (they kept only the last ~minute of samples). They now keep the whole run and coarsen older points, never below **one sample per physical plot pixel**. Coming back from minimize records the current totals so the gap is not a blank. Compare starts a new graph at Comparing (X axis begins at enumerate elapsed) so the hour of enumerating is not an empty left side.
 - Enumerating, Comparing, and Syncing show the **full absolute path** in the progress panel and status bar (not a relative path under the pair).
-
 - The compare folder tree no longer collapses after Exclude or Sync a folder. Only a new Compare starts with just the root open.
 - Compare was still walking unticked folder pairs. It now saves the current ticks first and compares only those pairs.
 - Cancelling Compare keeps the diffs already found. The tree and Sync use that partial list instead of going empty.
@@ -72,4 +76,5 @@ Work since **0.1.0** (not a new tagged release yet).
 - Initial release: Electron shell, ADS list/copy, settings, local update workflow.
 - `npm run dist` → NSIS installer.
 
+[0.2.0]: https://github.com/your-org/myfilesync/releases/tag/v0.2.0
 [0.1.0]: https://github.com/your-org/myfilesync/releases/tag/v0.1.0
