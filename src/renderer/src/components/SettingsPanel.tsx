@@ -7,11 +7,13 @@ type SettingsPanelProps = {
   updatesFolder: string
   updatesStatus: string
   hardwareAcceleration: boolean
+  confirmMirrorDeletes: boolean
   busy: boolean
   onBrowseUpdatesFolder: () => void
   onUpdatesFolderChange: (path: string) => void
   onCheckForUpdates: () => void
   onHardwareAccelerationChange: (enabled: boolean) => void
+  onConfirmMirrorDeletesChange: (enabled: boolean) => void
   onExportSettings: () => void
   onImportSettings: () => void
 }
@@ -26,11 +28,13 @@ export function SettingsPanel({
   updatesFolder,
   updatesStatus,
   hardwareAcceleration,
+  confirmMirrorDeletes,
   busy,
   onBrowseUpdatesFolder,
   onUpdatesFolderChange,
   onCheckForUpdates,
   onHardwareAccelerationChange,
+  onConfirmMirrorDeletesChange,
   onExportSettings,
   onImportSettings,
 }: SettingsPanelProps) {
@@ -95,13 +99,35 @@ export function SettingsPanel({
       ),
     },
     {
+      id: 'mirror-deletes',
+      keywords: 'confirm mirror deletes recycle bin don t show again warning',
+      node: (
+        <div className="settings-field">
+          <span className="settings-label">Mirror deletes</span>
+          <p className="settings-hint">
+            When Sync would remove files on the destination, ask first. Untick if you chose Don&apos;t
+            show again on that dialog.
+          </p>
+          <label className="check-row">
+            <input
+              type="checkbox"
+              checked={confirmMirrorDeletes}
+              disabled={busy}
+              onChange={(e) => onConfirmMirrorDeletesChange(e.target.checked)}
+            />
+            Confirm before deleting on the destination
+          </label>
+        </div>
+      ),
+    },
+    {
       id: 'backup',
       keywords: 'backup restore export import app settings',
       node: (
         <div className="settings-field">
           <span className="settings-label">Backup / restore</span>
           <p className="settings-hint">
-            Export or import app settings (updates folder, GPU, last job).
+            Export or import app settings (updates folder, GPU, delete confirm, last job).
           </p>
           <div className="settings-row">
             <button type="button" className="button" disabled={busy} onClick={onExportSettings}>

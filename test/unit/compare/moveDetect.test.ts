@@ -50,7 +50,7 @@ describe('pairMoves', () => {
     expect(pairs[0]?.kind).toBe('Rename')
   })
 
-  it('pairs a folder with the same name as Move', () => {
+  it('does not pair folders as a single Move', () => {
     const pairs = pairMoves(
       [
         file({
@@ -73,8 +73,7 @@ describe('pairMoves', () => {
         }),
       ],
     )
-    expect(pairs[0]?.kind).toBe('Move')
-    expect(pairs[0]?.newRelPath).toBe('dest/models')
+    expect(pairs).toEqual([])
   })
 
   it('does not pair files with different size or mtime', () => {
@@ -144,7 +143,7 @@ describe('applyMoveDetection', () => {
     await store.dispose()
   })
 
-  it('turns a same-name collapsed folder Create+Delete into Move', async () => {
+  it('pairs the file inside a renamed folder, not the folder as one Move', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mfs-move-dir-'))
     temps.push(root)
     const left = path.join(root, 'left')
@@ -178,13 +177,17 @@ describe('applyMoveDetection', () => {
 
     const page = await store.getPage(0, 50, 'moved')
     expect(page.rows).toHaveLength(1)
-    expect(page.rows[0]?.action).toBe('Move')
-    expect(page.rows[0]?.relPath.replace(/\\/g, '/')).toBe('dest/models')
-    expect(page.rows[0]?.fromRelPath?.replace(/\\/g, '/')).toBe('src/models')
+    expect(page.rows[0]?.relPath.replace(/\\/g, '/')).toBe('dest/models/readme.txt')
+    expect(page.rows[0]?.fromRelPath?.replace(/\\/g, '/')).toBe('src/models/readme.txt')
+
+    const all = await store.getPage(0, 50, 'all')
+    const rels = all.rows.map((row) => `${row.action}:${row.relPath.replace(/\\/g, '/')}`).sort()
+    expect(rels).toContain('Create:dest/models')
+    expect(rels).toContain('Delete:src/models')
     await store.dispose()
   })
 
-  it('does not re-walk a collapsed new folder to pair inner files', async () => {
+  it('pairs a file that moved into a new folder', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mfs-move-into-'))
     temps.push(root)
     const left = path.join(root, 'left')
@@ -210,13 +213,14 @@ describe('applyMoveDetection', () => {
     })
     await store.close()
     const n = await applyMoveDetection(store)
-    expect(n).toBe(0)
+    expect(n).toBe(1)
+
+    const moved = await store.getPage(0, 50, 'moved')
+    expect(moved.rows[0]?.relPath.replace(/\\/g, '/')).toBe('dest/a.txt')
+    expect(moved.rows[0]?.fromRelPath?.replace(/\\/g, '/')).toBe('a.txt')
 
     const all = await store.getPage(0, 50, 'all')
     expect(all.rows.some((row) => row.action === 'Create' && row.relPath.replace(/\\/g, '/') === 'dest')).toBe(
-      true,
-    )
-    expect(all.rows.some((row) => row.action === 'Delete' && row.relPath.replace(/\\/g, '/') === 'a.txt')).toBe(
       true,
     )
     await store.dispose()

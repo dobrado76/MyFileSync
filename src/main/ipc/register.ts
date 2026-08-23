@@ -15,6 +15,7 @@ import {
   compareRunRequestSchema,
   compareSetRowIncludedRequestSchema,
   jobIdRequestSchema,
+  jobExportFfsRequestSchema,
   jobImportPathRequestSchema,
   jobSaveRequestSchema,
   pickFileRequestSchema,
@@ -42,6 +43,7 @@ import { runInstaller } from '../updates/run'
 import { deleteJob, importJobJson, listJobs, loadJob, saveJob } from '../jobs/store'
 import { importIni } from '../jobs/importIni'
 import { importFfs } from '../jobs/importFfs'
+import { exportFfs } from '../jobs/exportFfs'
 import {
   cancelCompareRun,
   dropCompareRows,
@@ -249,6 +251,9 @@ export function registerIpc(appVersion: string): void {
     const saved = await saveJob(imported.value.job)
     if (!saved.ok) return saved
     return ok({ id: saved.value.id, warnings: imported.value.warnings })
+  })
+  handle(IPC_CHANNELS.JOB_EXPORT_FFS, jobExportFfsRequestSchema, async (req) => {
+    return exportFfs(req.job, requireAbsolute(req.path))
   })
 
   handle(IPC_CHANNELS.COMPARE_RUN, compareRunRequestSchema, async (req) => {

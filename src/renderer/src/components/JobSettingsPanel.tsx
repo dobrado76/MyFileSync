@@ -97,6 +97,30 @@ export function JobSettingsPanel({ job, locked, onChange }: JobSettingsPanelProp
       ),
     },
     {
+      id: 'usn-journal',
+      keywords: 'usn change journal ntfs incremental skip unchanged folders faster compare',
+      node: (
+        <>
+          <label className="check-row">
+            <input
+              type="checkbox"
+              disabled={locked}
+              checked={job.compare.useUsnJournal}
+              onChange={(e) =>
+                onChange({ compare: { ...job.compare, useUsnJournal: e.target.checked } })
+              }
+            />
+            Use NTFS change journal (skip unchanged folders)
+          </label>
+          <p className="settings-hint">
+            After a completed Compare, the next run only re-checks folders the journal says changed
+            (plus leftovers you have not synced yet). If the journal wrapped, was recreated, is
+            missing on that volume, or the path is not local NTFS, Compare does a full walk.
+          </p>
+        </>
+      ),
+    },
+    {
       id: 'hash-when-differs',
       keywords: 'hash content only when size date time already differs',
       node: (
@@ -207,6 +231,31 @@ export function JobSettingsPanel({ job, locked, onChange }: JobSettingsPanelProp
                 parallelism: {
                   ...job.parallelism,
                   compareWorkers: parseInt(e.target.value, 10) || 4,
+                },
+              })
+            }
+          />
+        </label>
+      ),
+    },
+    {
+      id: 'copy-parallel',
+      keywords: 'copy parallelism workers threads performance speed usb sync',
+      node: (
+        <label className="settings-label">
+          Copy parallelism
+          <input
+            type="number"
+            min={1}
+            max={32}
+            className="settings-input"
+            disabled={locked}
+            value={job.parallelism.copyPerDevice}
+            onChange={(e) =>
+              onChange({
+                parallelism: {
+                  ...job.parallelism,
+                  copyPerDevice: parseInt(e.target.value, 10) || 6,
                 },
               })
             }

@@ -81,7 +81,15 @@ export type CompareDropResponse = { dropped: number; stats: CompareStats }
 export type SyncRunResponse = { syncRunId: string }
 
 export type SyncEvent =
-  | { type: 'compare:progress'; runId: string; done: number; total: number; currentPath?: string }
+  | {
+      type: 'compare:progress'
+      runId: string
+      done: number
+      total: number
+      currentPath?: string
+      phase?: 'enumerating' | 'comparing'
+      titleNote?: string
+    }
   | { type: 'compare:done'; runId: string; stats: CompareStats }
   | { type: 'sync:progress'; syncRunId: string; progress: SyncProgress }
   | {
@@ -116,6 +124,7 @@ export type MyFileSyncApi = {
   jobImportJson: (req: { path: string }) => Promise<Result<{ id: string }>>
   jobImportIni: (req: { path: string }) => Promise<Result<{ id: string; warnings: string[] }>>
   jobImportFfs: (req: { path: string }) => Promise<Result<{ id: string; warnings: string[] }>>
+  jobExportFfs: (req: { path: string; job: JobFile }) => Promise<Result<{ path: string; warnings: string[] }>>
   compareRun: (req: {
     jobId: string
     runId?: string

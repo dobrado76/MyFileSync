@@ -1,5 +1,6 @@
 import { manifestsEqual, sortManifest, withoutIgnoredStreams, type AdsManifest } from '../ads/paths'
 import type { CompareCategory, CompareFilter, CompareRow, CompareStats, SideRecord, SideSummary, SyncActionType, SyncDirection, AdsDelta } from '../schemas/compare'
+import { USN_CURSOR_STREAM_NAME } from '../compare/usnAds'
 import { pairComparesAds, type JobFile } from '../schemas/job'
 
 /** Streams compare/sync should ignore: exclude list, and app-cache streams unless the job writes them. */
@@ -9,7 +10,7 @@ export function adsIgnoredStreamNames(job: JobFile, pairId?: string): readonly s
     if (pair && !pairComparesAds(pair)) return 'all'
   }
   if (!job.ads.syncAllStreams) return 'all'
-  const names = [...job.ads.excludeStreams]
+  const names = [...job.ads.excludeStreams, USN_CURSOR_STREAM_NAME]
   if (!job.ads.writeCacheToAds) {
     names.push(job.ads.cacheStreamNames.fileHash, ...job.ads.cacheStreamNames.folderStats)
   }

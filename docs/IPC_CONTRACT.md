@@ -39,6 +39,7 @@ Prefix: `sync:` for engine, `job:` for jobs, `app:` for shell.
 | `job:importJson` | `{ path }` | `{ id }` |
 | `job:importIni` | `{ path }` | `{ id, warnings: string[] }` |
 | `job:importFfs` | `{ path }` | `{ id, warnings: string[] }` |
+| `job:exportFfs` | `{ path, job }` | `{ path, warnings: string[] }` |
 
 ### Compare
 
@@ -74,7 +75,7 @@ Channel: `sync:event`
 
 ```typescript
 type SyncEvent =
-  | { type: 'compare:progress'; runId; done; total; currentPath? }
+  | { type: 'compare:progress'; runId; done; total; currentPath?; phase?: 'enumerating' | 'comparing' }
   | { type: 'compare:done'; runId; stats }
   | { type: 'sync:progress'; syncRunId; SyncProgress }
   | { type: 'sync:itemDone'; syncRunId; rowId; ok; error? }

@@ -84,6 +84,28 @@ describe('sync order', () => {
     ])
   })
 
+  it('creates parent folders before children and deletes children before parents', () => {
+    const list = [
+      action({ relPath: 'new/nested/file.txt', action: 'Create', workBytes: 10 }),
+      action({ relPath: 'new', action: 'Create', workBytes: 0, isDir: true }),
+      action({ relPath: 'new/nested', action: 'Create', workBytes: 0, isDir: true }),
+      action({ relPath: 'gone', action: 'Delete', workBytes: 0, isDir: true }),
+      action({ relPath: 'gone/nested/file.txt', action: 'Delete', workBytes: 0 }),
+      action({ relPath: 'gone/nested', action: 'Delete', workBytes: 0, isDir: true }),
+    ]
+    sortSyncActions(list)
+    expect(list.filter((a) => a.action === 'Create').map((a) => a.relPath)).toEqual([
+      'new',
+      'new/nested',
+      'new/nested/file.txt',
+    ])
+    expect(list.filter((a) => a.action === 'Delete').map((a) => a.relPath)).toEqual([
+      'gone/nested/file.txt',
+      'gone/nested',
+      'gone',
+    ])
+  })
+
   it('comparePlannedActions is stable by path within equal tier and size', () => {
     expect(
       comparePlannedActions(

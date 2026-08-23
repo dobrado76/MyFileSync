@@ -27,7 +27,9 @@ function killImage(image) {
 function killBuildLockers() {
   if (process.platform !== 'win32') return
 
-  for (const image of ['7za.exe', '7z.exe', '7zFM.exe', '7zG.exe', 'MyFileSync.exe']) {
+  // Do not taskkill MyFileSync.exe — the installed app in AppData is not this tree.
+  // A MyFileSync launched from release/win-unpacked is stopped below by path.
+  for (const image of ['7za.exe', '7z.exe', '7zFM.exe', '7zG.exe']) {
     killImage(image)
   }
 

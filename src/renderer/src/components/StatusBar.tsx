@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react'
 type StatusBarProps = {
   text: string
   showElapsed?: boolean
+  showExpand?: boolean
+  onExpand?: () => void
 }
 
 function formatElapsed(ms: number): string {
@@ -12,7 +14,7 @@ function formatElapsed(ms: number): string {
   return m > 0 ? `${m}:${s.toString().padStart(2, '0')}` : `${s}s`
 }
 
-export function StatusBar({ text, showElapsed = false }: StatusBarProps) {
+export function StatusBar({ text, showElapsed = false, showExpand = false, onExpand }: StatusBarProps) {
   const [startedAt, setStartedAt] = useState<number | null>(null)
   const [now, setNow] = useState(() => Date.now())
 
@@ -34,6 +36,20 @@ export function StatusBar({ text, showElapsed = false }: StatusBarProps) {
       </span>
       {showElapsed && startedAt ? (
         <span className="status-bar-elapsed">{formatElapsed(now - startedAt)}</span>
+      ) : null}
+      {showExpand ? (
+        <button
+          type="button"
+          className="status-bar-expand"
+          title="Show progress graphs"
+          aria-label="Show progress graphs"
+          onClick={onExpand}
+        >
+          <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+            <path fill="currentColor" d="M3 9.5 8 4.5 13 9.5H3z" />
+          </svg>
+          Progress
+        </button>
       ) : null}
     </footer>
   )

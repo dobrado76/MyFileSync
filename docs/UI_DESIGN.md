@@ -24,6 +24,8 @@ The workbench uses a **title bar** (Job picker + New, Settings) and a **job tool
 │     trip     │                                              │
 ├──────────────┴──────────────────────────────────────────────┤
 │ [Compare] [Sync]  Files: 12,450              [Cancel]       │
+├─────────────────────────────────────────────────────────────┤
+│ Progress (graphs + counts) or status-bar string             │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -35,7 +37,7 @@ The workbench uses a **title bar** (Job picker + New, Settings) and a **job tool
 
 ### Jobs (toolbar)
 
-- Name field, **Import…** (FreeFileSync `.ffs_gui` / `.ffs_batch`, INI, JSON), Save, Delete, Clear.
+- Name field, **Import…** (FreeFileSync `.ffs_gui` / `.ffs_batch`, INI, JSON), **Export…** (FreeFileSync `.ffs_gui` / `.ffs_batch`), Save, Delete, Clear.
 
 ### Folder pairs (Options tab)
 
@@ -47,13 +49,13 @@ Folder pairs and variant. Filters have their own tab (pattern vs this path).
 
 ### Compare tab (job settings)
 
-Compare method, ADS cache, Recycle Bin, workers, watch. A **Search settings** box at the top filters as you type (debounced; every word must match).
+Compare method, NTFS change journal, ADS cache, Recycle Bin, workers, watch. A **Search settings** box at the top filters as you type (debounced; every word must match).
 
 ### Compare results
 
 Filter bar (All | Differences | Source only | Target only | Deleted | Moved | ADS ≠) sits above a **split**:
 
-- **Folder tree (left)** — built from the change list after Compare (not a second disk walk). Classic tree chrome: dotted guides, folder icons, boxed +/−. The count is items in that branch. After every Compare, **only the root is expanded** (nested folders stay collapsed until you open a twistie). Click a folder to show only that branch in the grid. Right-click a folder:
+- **Folder tree (left)** — built from the change list after Compare (not a second disk walk). Classic tree chrome: dotted guides, folder icons, boxed +/−. The count is items in that branch. After every Compare, **only the root is expanded** (nested folders stay collapsed until you open a twistie). Exclude, Sync a folder, and filter changes keep whatever you already opened. Click a folder to show only that branch in the grid. Right-click a folder:
 
   - **Open source / Open target** — Windows default app for that file or folder.
   - **Reveal source / Reveal target** — open the parent folder and select the item (`mfe://reveal`) so you can inspect before Sync (especially Deletes).
@@ -63,7 +65,7 @@ Filter bar (All | Differences | Source only | Target only | Deleted | Moved | AD
   - **Sync this folder now** — run only that branch, then drop succeeded items from the tree.
 - **Change list (right)** — two-pane Source / Action / Target grid. Rows are virtualized (only the visible window is in the DOM). Right-click a row for the same Open and Reveal actions (source and/or target, whichever still exists).
 
-The tree only contains folders that have remaining diffs (equals are counted, not stored). Pair roots and folders with no changes are omitted — they disappear after **Sync this folder now** or a full Sync once that branch is empty. A collapsed missing-side folder is one node. Moves appear under both the old and new folders.
+The tree only contains folders that have remaining diffs (equals are counted, not stored). Pair roots and folders with no changes are omitted — they disappear after **Sync this folder now** or a full Sync once that branch is empty. A folder missing on one side lists every nested file and folder; the count is that full set. Moves appear under both the old and new folders. The tree count is the number of Sync actions in that branch — if it says 2000, Sync copies/updates/deletes/moves 2000 items.
 
 **Row colors** (CSS variables, dark-mode safe):
 
@@ -119,6 +121,10 @@ Mirror with deletes: modal confirm — “Remove 42 files/folders on right?”
 - Toast for single-item failure during sync; continue queue.
 - Modal summary at end if errors &gt; 0.
 - Messages use D11 plain language (read-only folder, permission denied).
+
+### Run progress
+
+During Compare or Sync a **progress panel** sits above the status bar: percent, current path, processed/remaining counts, elapsed/ETA, and graphs (bytes on Sync, items on both). The graphs keep the **whole phase** (older points are coarsened, never below one sample per physical plot pixel; the last seconds stay dense for the rate). Enumerating and Comparing each get their own series; Comparing’s clock starts at enumerate elapsed (not 00:00). Compare shows **Enumerating…** until the item count is known, then **Comparing… N%** with remaining and ETA. A down-arrow **minimizes** it to the status-bar string. The status bar then has **Progress** to open it again. The last choice is remembered (`settings.progressUiExpanded`).
 
 ## Theming
 

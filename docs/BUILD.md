@@ -36,6 +36,8 @@ Example for v0.1: `release/MyFileSync-Setup-0.1.0.exe`
 
 After a successful build, older `MyFileSync-Setup-*.exe` (and matching `.blockmap`) files in `release/` are deleted so only the current version remains. Cleanup does not run if the build fails.
 
+`prepare-dist` does **not** stop an installed MyFileSync (AppData). It only stops 7-Zip tools and processes whose executable path is under `release/` (for example `win-unpacked`).
+
 ## Local updates workflow
 
 1. Build a new installer with `npm run dist`.

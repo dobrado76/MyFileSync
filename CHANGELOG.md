@@ -29,13 +29,30 @@ Work since **0.1.0** (not a new tagged release yet).
 - Search settings on the Compare tab and in the Settings modal — type to narrow the list, no Search button.
 - Settings: hardware acceleration (GPU) toggle. Off uses software rendering; restart to apply.
 - Each folder pair has an **ADS** checkbox (saved on the job, default on). Off skips alternate-stream compare and extra stream copy for that pair.
+- Compare does not start if a source or target folder is missing or its drive is offline. One error instead of a fake full-tree Create list.
+- Compare and Sync use a **progress panel** (counts, rates, graphs). Minimize it to the status-bar string; **Progress** on the status bar opens it again. The last choice is remembered.
+- **Export…** writes the current job as a FreeFileSync `.ffs_gui` or `.ffs_batch` file (pairs, variant, compare method, Recycle Bin, filters).
+- Confirm mirror deletes has **Don’t show again**. Turn the prompt back on in Settings.
+- Compare can skip unchanged folders using the **NTFS change journal** (`compare.useUsnJournal`, default on). First completed Compare is a full walk and saves a journal cursor; later runs re-check only journal hits plus leftover diffs. Falls back to a full walk if the journal wrapped, was recreated, or is not NTFS.
+- Compare is two-phase: **Enumerating…** (exact item count) then **Comparing…** with a real progress total. Directory listings from the first pass are reused.
 
 ### Changed
 
+- Compare lists every file and folder when a tree is missing on one side (FreeFileSync). The tree count and Sync progress are that full set — not one collapsed folder that then copies for hours.
 - Windows installer builds skip Authenticode signing. The dist script does not search for a certificate. Icon and version resources are still written.
 
 ### Fixed
 
+- `npm run dist` no longer kills a running installed MyFileSync. Only build lockers under `release/` are stopped.
+- After Compare or Sync, the USN cursor is saved at the **current** journal head. Dest copies and listing closes no longer make the next Compare look like a full walk.
+- Ticking a second folder pair no longer invalidates every pair’s change-journal cursor (that was a full walk).
+- USN journal cursor is stored in AppData (`compare-usn/pairs/`) keyed by compare settings + left/right paths — shared across jobs with the same pair. Legacy per-job files still migrate on read.
+
+- Sync ignored **Copy parallelism** and copied one file at a time. It now runs that many copies at once (default 6). Create no longer lstats the source (that opens `$DATA` and wakes antivirus).
+- Progress graphs dropped the start of a long run (they kept only the last ~minute of samples). They now keep the whole run and coarsen older points, never below **one sample per physical plot pixel**. Coming back from minimize records the current totals so the gap is not a blank. Compare starts a new graph at Comparing (X axis begins at enumerate elapsed, e.g. 59:00) so the hour of enumerating is not an empty left side.
+- Enumerating, Comparing, and Syncing show the **full absolute path** in the progress panel and status bar (not a relative path under the pair).
+
+- The compare folder tree no longer collapses after Exclude or Sync a folder. Only a new Compare starts with just the root open.
 - Compare was still walking unticked folder pairs. It now saves the current ticks first and compares only those pairs.
 - Cancelling Compare keeps the diffs already found. The tree and Sync use that partial list instead of going empty.
 - Cancelling Sync removes items that already succeeded. The tree shows what is left so the next Sync is a resume, not a redo.

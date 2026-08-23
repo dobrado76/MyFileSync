@@ -1,10 +1,13 @@
 import type { BrowserWindow } from 'electron'
 import type { CompareFilter, CompareRun, CompareRow, CompareStats, FolderTreeNode } from '@shared/schemas/compare'
 import { z } from 'zod'
-import { enabledJobPairs, jobSchema, type JobFile } from '@shared/schemas/job'
+import { enabledJobPairs, jobSchema, type JobFile, type JobPair } from '@shared/schemas/job'
 import { loadJob } from '../jobs/store'
-import { openDb, loadStatesForPair } from '../db/syncState'
-import { getFiles } from '../compare/getFiles'
+import { openDb, loadStatesForPair, type PairFileStates } from '../db/syncState'
+import { enumerateFiles, getFiles, type EnumerateResult } from '../compare/getFiles'
+import { planPairUsn } from '../compare/usnWalk'
+import { compareUsnFilterKey, usnSkipReasonLabel } from '@shared/compare/usnPlan'
+import { persistUsnAfterCompare, snapshotPairCursors, outstandingRelPaths, type PersistedUsnPair } from '../compare/usnState'
 import {
   CompareRowStore,
   hydrateRowPaths,
@@ -12,6 +15,7 @@ import {
 } from '../compare/rowStore'
 import { applyMoveDetection } from '../compare/moveDetect'
 import { preflightPairUncPaths } from '../remote/preflight'
+import { assertEnabledPairRootsReady } from '../compare/pairRoots'
 import {
   isMultiPairTree,
   pairLabelFromLeftPath,
@@ -20,8 +24,19 @@ import {
   type PairTreeLabel,
 } from '@shared/compare/folderTree'
 
+export type CompareProgressPhase = 'enumerating' | 'comparing'
+
 export type CompareEvent =
-  | { type: 'compare:progress'; runId: string; done: number; total: number; currentPath?: string }
+  | {
+      type: 'compare:progress'
+      runId: string
+      done: number
+      total: number
+      currentPath?: string
+      phase?: CompareProgressPhase
+      /** Shown in the window title; not overwritten by per-file progress paths. */
+      titleNote?: string
+    }
   | { type: 'compare:done'; runId: string; stats: CompareRun['stats'] }
 
 export type ActiveCompareRun = CompareRun & { store: CompareRowStore }
@@ -30,7 +45,10 @@ const PROGRESS_INTERVAL_MS = 100
 
 function createCompareProgress(runId: string, emit: (event: CompareEvent) => void) {
   let scanned = 0
+  let total = 0
+  let phase: CompareProgressPhase = 'enumerating'
   let currentPath = ''
+  let titleNote = ''
   let lastEmitAt = 0
   let timer: ReturnType<typeof setTimeout> | null = null
 
@@ -44,12 +62,34 @@ function createCompareProgress(runId: string, emit: (event: CompareEvent) => voi
       type: 'compare:progress',
       runId,
       done: scanned,
-      total: 0,
+      total,
       currentPath,
+      phase,
+      titleNote: titleNote || undefined,
     })
   }
 
   return {
+    beginEnumerate(): void {
+      phase = 'enumerating'
+      scanned = 0
+      total = 0
+      currentPath = 'Enumerating…'
+      titleNote = 'Enumerating'
+      flush()
+    },
+    beginCompare(itemTotal: number): void {
+      phase = 'comparing'
+      scanned = 0
+      total = itemTotal
+      currentPath = 'Comparing…'
+      titleNote = 'Comparing'
+      flush()
+    },
+    setTitleNote(note: string): void {
+      titleNote = note
+      flush()
+    },
     note(relPath: string): void {
       scanned++
       currentPath = relPath
@@ -75,6 +115,23 @@ function createCompareProgress(runId: string, emit: (event: CompareEvent) => voi
 const compareRuns = new Map<string, ActiveCompareRun>()
 const cancelFlags = new Map<string, boolean>()
 let activeCompareRunId: string | null = null
+
+function enumerateTitleNote(
+  pairIndex: number,
+  pairCount: number,
+  usedJournal: boolean,
+  skipReason?: Parameters<typeof usnSkipReasonLabel>[0],
+  skipDetail?: string,
+): string {
+  const pairPrefix =
+    pairCount > 1 ? `Pair ${pairIndex + 1} of ${pairCount}` : undefined
+  if (usedJournal) {
+    const mode = pairPrefix ? `${pairPrefix} · change journal` : 'Change journal'
+    return skipDetail ? `${mode} (${skipDetail})` : mode
+  }
+  const why = usnSkipReasonLabel(skipReason ?? 'no_cursor', skipDetail)
+  return pairPrefix ? `${pairPrefix} · full walk — ${why}` : `Full walk — ${why}`
+}
 
 function pairLabelsForJob(job: JobFile): PairTreeLabel[] {
   return enabledJobPairs(job).map((p) => ({ pairId: p.id, label: pairLabelFromLeftPath(p.left) }))
@@ -135,46 +192,109 @@ export async function runCompare(
       throw new Error('Folder paths are not set. Edit the job and choose left and right folders.')
     }
   }
+  const roots = await assertEnabledPairRootsReady(job)
+  if (!roots.ok) {
+    await store.dispose()
+    throw new Error(
+      roots.error.hint ? `${roots.error.message} ${roots.error.hint}` : roots.error.message,
+    )
+  }
 
-  let pairIndex = 0
+  const pairUsnCursors: Record<string, PersistedUsnPair> = {}
 
   const syncDb = job.variant === 'twoWay' ? await openDb(job.id) : null
   const progress = createCompareProgress(runId, emit)
 
+  type PairPrep = {
+    pair: JobPair
+    pairStates?: PairFileStates
+    usnPlan: Awaited<ReturnType<typeof planPairUsn>>
+    listing: EnumerateResult
+  }
+
   try {
+    const preps: PairPrep[] = []
+    progress.beginEnumerate()
+    let pairIndex = 0
     for (const pair of enabledPairs) {
       if (cancelFlags.get(runId)) break
 
       await preflightPairUncPaths(pair.left, pair.right)
-      progress.message(
-        enabledPairs.length > 1
-          ? `Pair ${pairIndex + 1} of ${enabledPairs.length}`
-          : 'Scanning folders…',
-      )
-
       const pairStates =
         job.variant === 'twoWay' && syncDb ? loadStatesForPair(syncDb, pair.id) : undefined
 
-      const result = await getFiles({
+      const usnPlan = await planPairUsn(job, pair)
+      progress.setTitleNote(
+        enumerateTitleNote(
+          pairIndex,
+          enabledPairs.length,
+          usnPlan.usedJournal,
+          usnPlan.skipReason,
+          usnPlan.skipDetail,
+        ),
+      )
+
+      const listing = await enumerateFiles({
         pair,
         job,
-        pairStates,
-        onDiff: (row) => store.append(row),
         onProgress: (currentPath) => {
           progress.note(currentPath)
         },
         isCancelled: () => cancelFlags.get(runId) === true,
+        skipSubtree: usnPlan.skipSubtree,
       })
-
-      store.addEquals(result.equalCount)
       if (cancelFlags.get(runId)) break
+      preps.push({ pair, pairStates, usnPlan, listing })
       pairIndex++
+    }
+
+    if (!cancelFlags.get(runId)) {
+      const itemTotal = preps.reduce((sum, prep) => sum + prep.listing.total, 0)
+      progress.beginCompare(itemTotal)
+      pairIndex = 0
+      for (const prep of preps) {
+        if (cancelFlags.get(runId)) break
+        if (enabledPairs.length > 1) {
+          progress.setTitleNote(`Comparing pair ${pairIndex + 1} of ${enabledPairs.length}`)
+        }
+        const result = await getFiles({
+          pair: prep.pair,
+          job,
+          pairStates: prep.pairStates,
+          listingCache: prep.listing.cache,
+          onDiff: (row) => store.append(row),
+          onProgress: (currentPath) => {
+            progress.note(currentPath)
+          },
+          isCancelled: () => cancelFlags.get(runId) === true,
+          skipSubtree: prep.usnPlan.skipSubtree,
+        })
+        if (prep.usnPlan.cursors) pairUsnCursors[prep.pair.id] = prep.usnPlan.cursors
+        store.addEquals(result.equalCount)
+        prep.listing.cache.dirs.clear()
+        if (cancelFlags.get(runId)) break
+        pairIndex++
+      }
     }
 
     if (!cancelFlags.get(runId)) {
       progress.message('Detecting moved files…')
       await store.close()
       await applyMoveDetection(store)
+      if (Object.keys(pairUsnCursors).length > 0 || preps.length > 0) {
+        const toPersist: Record<string, PersistedUsnPair> = { ...pairUsnCursors }
+        for (const prep of preps) {
+          if (toPersist[prep.pair.id]) continue
+          const snap = await snapshotPairCursors(
+            prep.pair,
+            outstandingRelPaths(store, prep.pair.id),
+          )
+          if (snap) toPersist[prep.pair.id] = snap
+        }
+        if (Object.keys(toPersist).length > 0) {
+          await persistUsnAfterCompare(job, store, toPersist, compareUsnFilterKey(job))
+        }
+      }
     }
   } finally {
     progress.stop()

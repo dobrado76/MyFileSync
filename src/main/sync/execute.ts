@@ -11,6 +11,10 @@ import { yieldToEventLoop } from '../win32/nativeLock'
 import { resolvePairRoot, versionBeforeMutation } from './versioning'
 import { rowMatchesTreePath } from '@shared/compare/folderTree'
 import { sortSyncActions } from '@shared/sync/order'
+import { runWithConcurrency } from '@shared/sync/pool'
+import { syncProgressPath } from '@shared/sync/progressPath'
+import { persistUsnAfterSync } from '../compare/usnState'
+import { assertEnabledPairRootsReady } from '../compare/pairRoots'
 
 export type SyncRunState = {
   syncRunId: string
@@ -104,6 +108,8 @@ export async function executeSync(
       phase: 'preparing',
       done: 0,
       total: 0,
+      bytesDone: 0,
+      bytesTotal: 0,
       errors: 0,
     },
   }
@@ -112,11 +118,35 @@ export async function executeSync(
   if (!state.cancelled) clearCopyAbort()
   if (!rowIdFilter) store.clearSyncErrors()
 
+  const roots = await assertEnabledPairRootsReady(job)
+  if (!roots.ok) {
+    const failure: SyncFailure = {
+      rowId: '',
+      relPath: '',
+      action: 'Create',
+      code: roots.error.code === 'not-allowed' ? 'not-allowed' : 'not-found',
+      message: roots.error.message,
+      hint: roots.error.hint,
+    }
+    const summary: SyncSummary = {
+      done: 0,
+      total: 0,
+      succeeded: 0,
+      failed: 1,
+      cancelled: false,
+      failures: [failure],
+    }
+    emit({ type: 'sync:done', syncRunId, summary })
+    activeRuns.delete(syncRunId)
+    return summary
+  }
+
   let succeeded = 0
   let failed = 0
   const failures: SyncFailure[] = []
   const progress = createSyncProgress(syncRunId, state, emit)
 
+  const ensuredDirs = new Set<string>()
   const copyOptions = (): CopyOptions => ({
     excludeStreams: ignored === 'all' ? [] : [...ignored],
     deleteExtraStreams: job.variant === 'mirror',
@@ -124,6 +154,7 @@ export async function executeSync(
     hashAlgorithm: job.compare.contentHash === 'sha256' ? 'sha256' : 'md5',
     vssEnabled: job.vss.enabled,
     filters: job.filters,
+    ensuredDirs,
     onProgress: (current) => progress.note(current, 'copying'),
     isCancelled: () => state.cancelled || isCopyAborted(),
   })
@@ -151,9 +182,16 @@ export async function executeSync(
 
   sortSyncActions(actions)
   state.progress.total = actions.length
+  state.progress.bytesTotal = actions.reduce((sum, action) => sum + action.workBytes, 0)
+  state.progress.bytesDone = 0
 
+  let lastYieldAt = Date.now()
   async function runOne(action: PlannedAction, phase: SyncProgress['phase']): Promise<void> {
-    await yieldToEventLoop()
+    const now = Date.now()
+    if (now - lastYieldAt >= 75) {
+      lastYieldAt = now
+      await yieldToEventLoop()
+    }
     if (state.cancelled || isCopyAborted()) {
       state.cancelled = true
       return
@@ -165,8 +203,11 @@ export async function executeSync(
       options.filterRoot = action.direction === 'rightToLeft' ? pair.right : pair.left
       options.copyAds = pairComparesAds(pair)
     }
+    if (action.action === 'Create' && !action.isDir) {
+      options.destLikelyMissing = true
+    }
 
-    progress.note(action.relPath, phase)
+    progress.note(syncProgressPath(action), phase)
 
     const result = await runAction(action, job, options)
     if (!result.ok && result.error.code === 'cancelled') {
@@ -174,6 +215,7 @@ export async function executeSync(
       return
     }
     state.progress.done++
+    state.progress.bytesDone = (state.progress.bytesDone ?? 0) + action.workBytes
     if (result.ok) {
       succeeded++
       succeededIds.add(action.rowId)
@@ -205,16 +247,25 @@ export async function executeSync(
     if (state.cancelled || isCopyAborted()) state.cancelled = true
   }
 
-  for (const action of actions) {
-    if (state.cancelled) break
-    const phase = action.action === 'Delete' ? 'deleting' : 'copying'
-    await runOne(action, phase)
-  }
+  const isCancelled = () => state.cancelled || isCopyAborted()
+  const moves = actions.filter((action) => action.action === 'Move' || action.action === 'Rename')
+  const copies = actions.filter(
+    (action) => action.action !== 'Move' && action.action !== 'Rename' && action.action !== 'Delete',
+  )
+  const deletes = actions.filter((action) => action.action === 'Delete')
+  const copyConcurrency = Math.max(1, job.parallelism.copyPerDevice)
+
+  await runWithConcurrency(moves, 1, isCancelled, (action) => runOne(action, 'copying'))
+  await runWithConcurrency(copies, copyConcurrency, isCancelled, (action) => runOne(action, 'copying'))
+  await runWithConcurrency(deletes, 1, isCancelled, (action) => runOne(action, 'deleting'))
 
   progress.flush()
 
   if (succeededIds.size > 0) {
     await store.applyReplacements(succeededIds, new Map())
+  }
+  if (!state.cancelled) {
+    await persistUsnAfterSync(job, store).catch(() => undefined)
   }
 
   state.progress.phase = state.cancelled ? 'cancelled' : 'done'

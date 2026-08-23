@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { convertFfsFilter, convertFfsFilterList } from '@shared/compare/ffsFilters'
+import { convertFfsFilter, convertFfsFilterList, toFfsFilter } from '@shared/compare/ffsFilters'
 import { shouldIncludePath } from '@shared/compare/filters'
 
 describe('convertFfsFilter', () => {
@@ -11,6 +11,14 @@ describe('convertFfsFilter', () => {
     expect(convertFfsFilter('\\!Models triggers.txt')).toBe('/!Models triggers.txt')
     expect(convertFfsFilter('*.tmp')).toBe('*.tmp')
     expect(convertFfsFilter('*')).toBeNull()
+  })
+
+  it('maps gitignore rules back to FreeFileSync items', () => {
+    expect(toFfsFilter('/System Volume Information')).toBe('\\System Volume Information\\')
+    expect(toFfsFilter('thumbs.db')).toBe('*\\thumbs.db')
+    expect(toFfsFilter('*.tmp')).toBe('*.tmp')
+    expect(toFfsFilter('/Sites/secret')).toBe('\\Sites\\secret\\')
+    expect(toFfsFilter('!keep')).toBeNull()
   })
 
   it('matches like FreeFileSync after conversion', () => {

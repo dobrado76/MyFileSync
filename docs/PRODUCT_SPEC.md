@@ -43,7 +43,7 @@
 
 - Click **Sync** → execute included actions with progress, cancel.
 - NTFS→NTFS: configured ADS streams copied with primary `$DATA`.
-- Deletes default to **Recycle Bin**; confirm when mirror delete count &gt; 0.
+- Deletes default to **Recycle Bin**; confirm when mirror delete count &gt; 0 (Don’t show again is in Settings).
 - Log panel captures errors in plain language (read-only folder, permission denied).
 
 **Acceptance:** After mirror sync, destination stream list matches source (minus excluded streams).

@@ -1,4 +1,4 @@
-import { useEffect, useState, type MouseEvent } from 'react'
+import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import type { FolderTreeNode } from '@shared/schemas/compare'
 import { resolveCompareDiskPaths, type PairDiskRoots } from '@shared/compare/folderTree'
 import { CompareInspectMenu } from './CompareInspectMenu'
@@ -7,6 +7,7 @@ export type TreeFolderAction = 'excludePath' | 'excludeName' | 'excludeTemp' | '
 
 type CompareFolderTreeProps = {
   root: FolderTreeNode | null
+  compareRunId?: string | null
   selectedPath: string
   rootLabel: string
   pairSourcePaths?: Record<string, string>
@@ -124,6 +125,7 @@ function TreeBranch({
 
 export function CompareFolderTree({
   root,
+  compareRunId,
   selectedPath,
   rootLabel,
   pairSourcePaths,
@@ -136,15 +138,13 @@ export function CompareFolderTree({
 }: CompareFolderTreeProps) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(['']))
   const [menu, setMenu] = useState<MenuState | null>(null)
+  const lastCompareRunId = useRef<string | null | undefined>(undefined)
 
   useEffect(() => {
-    if (!root) return
-    const next = new Set<string>([''])
-    for (const child of root.children) {
-      if (child.path.startsWith('@')) next.add(child.path)
-    }
-    setExpanded(next)
-  }, [root])
+    if (compareRunId === lastCompareRunId.current) return
+    lastCompareRunId.current = compareRunId
+    setExpanded(new Set(['']))
+  }, [compareRunId])
 
   useEffect(() => {
     if (!menu) return

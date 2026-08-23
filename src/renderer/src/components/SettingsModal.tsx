@@ -5,12 +5,14 @@ type SettingsModalProps = {
   updatesFolder: string
   updatesStatus: string
   hardwareAcceleration: boolean
+  confirmMirrorDeletes: boolean
   busy: boolean
   onClose: () => void
   onBrowseUpdatesFolder: () => void
   onUpdatesFolderChange: (path: string) => void
   onCheckForUpdates: () => void
   onHardwareAccelerationChange: (enabled: boolean) => void
+  onConfirmMirrorDeletesChange: (enabled: boolean) => void
   onExportSettings: () => void
   onImportSettings: () => void
 }
@@ -20,12 +22,14 @@ export function SettingsModal({
   updatesFolder,
   updatesStatus,
   hardwareAcceleration,
+  confirmMirrorDeletes,
   busy,
   onClose,
   onBrowseUpdatesFolder,
   onUpdatesFolderChange,
   onCheckForUpdates,
   onHardwareAccelerationChange,
+  onConfirmMirrorDeletesChange,
   onExportSettings,
   onImportSettings,
 }: SettingsModalProps) {
@@ -51,11 +55,13 @@ export function SettingsModal({
             updatesFolder={updatesFolder}
             updatesStatus={updatesStatus}
             hardwareAcceleration={hardwareAcceleration}
+            confirmMirrorDeletes={confirmMirrorDeletes}
             busy={busy}
             onBrowseUpdatesFolder={onBrowseUpdatesFolder}
             onUpdatesFolderChange={onUpdatesFolderChange}
             onCheckForUpdates={onCheckForUpdates}
             onHardwareAccelerationChange={onHardwareAccelerationChange}
+            onConfirmMirrorDeletesChange={onConfirmMirrorDeletesChange}
             onExportSettings={onExportSettings}
             onImportSettings={onImportSettings}
           />

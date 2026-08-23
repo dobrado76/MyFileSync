@@ -42,6 +42,7 @@ src/main/
     store.ts            # Load/save job JSON
     importIni.ts        # BackupMirror INI → JSON
     importFfs.ts        # FreeFileSync .ffs_gui / .ffs_batch → JSON
+    exportFfs.ts        # JSON → FreeFileSync .ffs_gui / .ffs_batch
   compare/
     walk.ts             # Parallel directory traversal
     classify.ts         # Diff categories + ADS manifest diff

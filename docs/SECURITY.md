@@ -24,11 +24,15 @@ Job JSON stores paths as typed strings; validate on load with Zod.
 | Control | Behavior |
 |---------|----------|
 | **Review before sync** | Default: compare then explicit Sync click (D10) |
-| **Mirror deletes** | Show delete count in confirm dialog when &gt; 0 |
+| **Mirror deletes** | Show delete count in confirm dialog when &gt; 0 (skippable via Don’t show again) |
 | **Permanent delete** | Confirm when multiple items or folder trees |
 | **Recycle Bin default** | D6 — `SHFileOperation` with `FOF_ALLOWUNDO` |
 | **Read-only dest** | Clear dest `FILE_ATTRIBUTE_READONLY` for the write/delete, then match the source (D22). ACL permission denied still blocks with a plain message. |
 | **Same path guard** | Reject left === right after normalize |
+
+## Change journal
+
+Compare may read the NTFS USN journal (`FSCTL_QUERY_USN_JOURNAL` / `FSCTL_READ_USN_JOURNAL`) to skip unchanged folders. It does **not** create or delete the journal. Paths outside the pair roots are ignored.
 
 ## ADS-specific
 

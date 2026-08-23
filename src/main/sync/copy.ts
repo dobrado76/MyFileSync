@@ -29,7 +29,11 @@ export type CopyOptions = {
   filterRoot?: string
   /** Extra named-stream copy. CopyFileEx still copies ADS on NTFS→NTFS. */
   copyAds?: boolean
-  onProgress?: (relPath: string) => void
+  /** Create of a new file — skip dest/source lstat (lstat opens $DATA and wakes AV). */
+  destLikelyMissing?: boolean
+  /** Shared across one Sync so mkdir is not repeated for every file in a folder. */
+  ensuredDirs?: Set<string>
+  onProgress?: (absPath: string) => void
   isCancelled?: () => boolean
 }
 
@@ -39,6 +43,13 @@ function shouldCopyAds(options: CopyOptions): boolean {
 
 function syncAborted(options: CopyOptions): boolean {
   return Boolean(options.isCancelled?.() || isCopyAborted())
+}
+
+async function ensureParentDir(dest: string, ensuredDirs?: Set<string>): Promise<void> {
+  const dir = path.dirname(dest)
+  if (ensuredDirs?.has(dir)) return
+  await fs.mkdir(dir, { recursive: true })
+  ensuredDirs?.add(dir)
 }
 
 export async function copyEntry(
@@ -51,6 +62,9 @@ export async function copyEntry(
 
   if (action.isDir) {
     if (action.action === 'Create') {
+      return createDir(action.sourcePath, action.destPath, options)
+    }
+    if (action.action === 'Move' || action.action === 'Rename') {
       return copyTree(action.sourcePath, action.destPath, action.relPath, options)
     }
     return copyStreamsOnly(action, options)
@@ -65,22 +79,24 @@ async function copyFile(source: string, dest: string, options: CopyOptions): Pro
       return err({ code: 'cancelled', message: 'Sync cancelled.' })
     }
 
-    await fs.mkdir(path.dirname(dest), { recursive: true })
+    await ensureParentDir(dest, options.ensuredDirs)
     const unlocked = await clearReadOnlyIfExists(dest)
     if (!unlocked.ok) return unlocked
 
-    try {
-      const destStat = await fs.lstat(dest)
-      const srcStat = await fs.lstat(source)
-      if (destStat.size === srcStat.size && destStat.mtimeMs === srcStat.mtimeMs && !destStat.isDirectory()) {
-        if (shouldCopyAds(options)) {
-          const streams = await copyStreams(source, dest, streamCopyOptions(options))
-          if (!streams.ok) return streams
+    if (!options.destLikelyMissing) {
+      try {
+        const destStat = await fs.lstat(dest)
+        const srcStat = await fs.lstat(source)
+        if (destStat.size === srcStat.size && destStat.mtimeMs === srcStat.mtimeMs && !destStat.isDirectory()) {
+          if (shouldCopyAds(options)) {
+            const streams = await copyStreams(source, dest, streamCopyOptions(options))
+            if (!streams.ok) return streams
+          }
+          return ok(undefined)
         }
-        return ok(undefined)
+      } catch {
+        /* dest missing — CopyFileEx; do not stat the source (that opens $DATA). */
       }
-    } catch {
-      /* dest missing — CopyFileEx; do not stat the source (that opens $DATA). */
     }
 
     if (syncAborted(options)) {
@@ -154,6 +170,58 @@ async function copyFile(source: string, dest: string, options: CopyOptions): Pro
   }
 }
 
+/** Folder Create is mkdir only — children are their own compare rows. */
+async function createDir(
+  source: string,
+  dest: string,
+  options: CopyOptions,
+): Promise<Result<void>> {
+  try {
+    if (syncAborted(options)) {
+      return err({ code: 'cancelled', message: 'Sync cancelled.' })
+    }
+    await fs.mkdir(dest, { recursive: true })
+    options.ensuredDirs?.add(dest)
+    const unlocked = await clearReadOnlyIfExists(dest)
+    if (!unlocked.ok) return unlocked
+    if (shouldCopyAds(options) && process.platform === 'win32') {
+      const dirStreams = await copyStreams(source, dest, streamCopyOptions(options))
+      if (!dirStreams.ok) return dirStreams
+    }
+    if (process.platform === 'win32') {
+      const times = await copyFileTimes(source, dest)
+      if (!times.ok) return times
+    }
+    await applyReadOnlyFromSource(source, dest)
+    return ok(undefined)
+  } catch (error) {
+    if (syncAborted(options)) {
+      return err({ code: 'cancelled', message: 'Sync cancelled.' })
+    }
+    const message = plainIoMessage(error, 'Create folder failed')
+    if (message.includes('read-only') || message.includes('Permission')) {
+      return permissionDeniedError('copy', dest, message)
+    }
+    return ioError(message)
+  }
+}
+
+/** Prefer an empty rmdir. Recursive only if a leftover collapsed-folder compare left children. */
+async function removeDir(targetPath: string): Promise<void> {
+  try {
+    await fs.rmdir(targetPath)
+  } catch (error) {
+    const code =
+      error instanceof Error && 'code' in error ? String((error as { code?: string }).code) : ''
+    if (code === 'ENOTEMPTY' || code === 'ENOENT') {
+      if (code === 'ENOENT') return
+      await fs.rm(targetPath, { recursive: true, force: true })
+      return
+    }
+    throw error
+  }
+}
+
 async function copyTree(
   source: string,
   dest: string,
@@ -165,6 +233,7 @@ async function copyTree(
       return err({ code: 'cancelled', message: 'Sync cancelled.' })
     }
     await fs.mkdir(dest, { recursive: true })
+    options.ensuredDirs?.add(dest)
     const unlocked = await clearReadOnlyIfExists(dest)
     if (!unlocked.ok) return unlocked
     if (shouldCopyAds(options) && process.platform === 'win32') {
@@ -197,7 +266,7 @@ async function copyTree(
 
       const childSrc = path.join(source, entry.name)
       const childDest = path.join(dest, entry.name)
-      options.onProgress?.(childRel)
+      options.onProgress?.(childDest)
 
       if (entry.isDirectory()) {
         const nested = await copyTree(childSrc, childDest, childRel, options)
@@ -314,7 +383,7 @@ export async function deleteEntry(
     }
 
     if (isDir) {
-      await fs.rm(targetPath, { recursive: true, force: true })
+      await removeDir(targetPath)
     } else {
       await fs.unlink(targetPath)
     }
@@ -327,7 +396,7 @@ export async function deleteEntry(
         if (useRecycleBin) {
           await shell.trashItem(targetPath)
         } else if (isDir) {
-          await fs.rm(targetPath, { recursive: true, force: true })
+          await removeDir(targetPath)
         } else {
           await fs.unlink(targetPath)
         }

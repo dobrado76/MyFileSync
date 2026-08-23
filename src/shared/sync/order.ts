@@ -38,10 +38,21 @@ export function estimateWorkBytes(row: CompareRow): number {
   }
 }
 
+function relPathDepth(relPath: string): number {
+  return relPath.replace(/\\/g, '/').split('/').filter(Boolean).length
+}
+
 export function comparePlannedActions(a: PlannedAction, b: PlannedAction): number {
   const tierA = ACTION_TIER[a.action] ?? 99
   const tierB = ACTION_TIER[b.action] ?? 99
   if (tierA !== tierB) return tierA - tierB
+  if (a.action === 'Create' || a.action === 'Delete') {
+    const depthA = relPathDepth(a.relPath)
+    const depthB = relPathDepth(b.relPath)
+    if (depthA !== depthB) {
+      return a.action === 'Delete' ? depthB - depthA : depthA - depthB
+    }
+  }
   if (a.workBytes !== b.workBytes) return a.workBytes - b.workBytes
   return a.relPath.localeCompare(b.relPath, undefined, { sensitivity: 'base' })
 }

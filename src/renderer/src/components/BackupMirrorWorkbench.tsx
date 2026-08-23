@@ -22,6 +22,7 @@ type BackupMirrorWorkbenchProps = {
   compareRowOffset: number
   compareRowTotal: number
   compareFolderTree: FolderTreeNode | null
+  compareRunId: string | null
   comparePathPrefix: string
   compareFilter: CompareFilter
   compareBusy: boolean
@@ -33,6 +34,7 @@ type BackupMirrorWorkbenchProps = {
   busy: boolean
   onMainTabChange: (tab: MainTab) => void
   onImportJob: () => void
+  onExportJob: () => void
   onChangeJob: (patch: Partial<JobFile>) => void
   onBrowsePath: (index: number, side: 'left' | 'right') => void
   onSetPairPath: (index: number, side: 'left' | 'right', path: string) => void
@@ -72,6 +74,7 @@ export function BackupMirrorWorkbench(props: BackupMirrorWorkbenchProps) {
     compareRowOffset,
     compareRowTotal,
     compareFolderTree,
+    compareRunId,
     comparePathPrefix,
     compareFilter,
     compareBusy,
@@ -83,6 +86,7 @@ export function BackupMirrorWorkbench(props: BackupMirrorWorkbenchProps) {
     busy,
     onMainTabChange,
     onImportJob,
+    onExportJob,
     onChangeJob,
     onBrowsePath,
     onSetPairPath,
@@ -220,6 +224,19 @@ export function BackupMirrorWorkbench(props: BackupMirrorWorkbenchProps) {
             }
           >
             Import…
+          </button>
+          <button
+            type="button"
+            className="button button-sm"
+            disabled={!activeJob}
+            onClick={onExportJob}
+            title={
+              activeJob
+                ? 'Export this job as a FreeFileSync .ffs_gui or .ffs_batch file'
+                : 'Create or open a job before exporting'
+            }
+          >
+            Export…
           </button>
 
           {activeJob ? (
@@ -520,6 +537,7 @@ export function BackupMirrorWorkbench(props: BackupMirrorWorkbenchProps) {
                   filter={compareFilter}
                   busy={compareBusy || syncBusy}
                   folderTree={compareFolderTree}
+                  compareRunId={compareRunId}
                   pathPrefix={comparePathPrefix}
                   pathPrefixLabel={comparePathLabel}
                   rootLabel={treeRootLabel}

@@ -45,6 +45,7 @@ export const jobSchema = z.object({
     hashWhenSizeOrTimeDiffers: z.boolean(),
     useAdsCache: z.boolean(),
     fastFolderCompare: z.boolean(),
+    useUsnJournal: z.boolean().default(true),
   }),
   ads: z.object({
     syncAllStreams: z.boolean(),
@@ -133,6 +134,7 @@ export function createDefaultJob(name = 'New job'): JobFile {
       hashWhenSizeOrTimeDiffers: true,
       useAdsCache: false,
       fastFolderCompare: false,
+      useUsnJournal: true,
     },
     ads: {
       syncAllStreams: true,

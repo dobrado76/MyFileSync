@@ -32,6 +32,15 @@ describe('enabledJobPairs', () => {
   })
 })
 
+describe('compare.useUsnJournal', () => {
+  it('defaults on for older job files', () => {
+    const job = createDefaultJob('usn')
+    const { useUsnJournal: _drop, ...compare } = job.compare
+    const parsed = jobSchema.parse({ ...job, compare })
+    expect(parsed.compare.useUsnJournal).toBe(true)
+  })
+})
+
 describe('pair ads', () => {
   it('defaults ADS on for older job files', () => {
     const job = createDefaultJob('ads')

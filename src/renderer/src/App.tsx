@@ -1,6 +1,7 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { shouldShowUpdateBanner, isJobConfigLocked, useWorkbenchStore } from './store/workbenchStore'
 import { StatusBar } from './components/StatusBar'
+import { RunProgressPanel } from './components/RunProgressPanel'
 import { UpdateBanner } from './components/UpdateBanner'
 import { SettingsModal } from './components/SettingsModal'
 import { BackupMirrorWorkbench } from './components/BackupMirrorWorkbench'
@@ -19,11 +20,17 @@ export default function App() {
     compareRowOffset,
     compareRowTotal,
     compareFolderTree,
+    compareRunId,
     comparePathPrefix,
     compareFilter,
     compareBusy,
+    compareProgress,
     compareStats,
+    syncProgress,
     syncBusy,
+    progressUiExpanded,
+    progressStartedAt,
+    progressSamples,
     syncQueued,
     statusText,
     logs,
@@ -32,16 +39,20 @@ export default function App() {
     updatesFolder,
     updatesStatus,
     hardwareAcceleration,
+    confirmMirrorDeletes,
     pendingUpdate,
     busy,
     selectedRow,
     settingsOpen,
+    compareCancelled,
+    syncCancelling,
     init,
     selectJob,
     newJob,
     saveActiveJob,
     deleteActiveJob,
     importJobFile,
+    exportJobFfs,
     updateActiveJob,
     setMainTab,
     setActivePairIndex,
@@ -70,6 +81,9 @@ export default function App() {
     browseUpdatesFolder,
     setUpdatesFolder,
     setHardwareAcceleration,
+    setConfirmMirrorDeletes,
+    setProgressUiExpanded,
+    setProgressChartPixels,
     checkForUpdates,
     runUpdate,
     dismissUpdate,
@@ -79,6 +93,7 @@ export default function App() {
     openSettings,
     closeSettings,
     handleSyncEvent,
+    catchUpProgressSample,
     appVersion,
     syncFailures,
     showSyncFailures,
@@ -111,6 +126,30 @@ export default function App() {
 
   const showBanner = shouldShowUpdateBanner(state)
   const configLocked = isJobConfigLocked(compareBusy, syncBusy)
+  const runBusy = compareBusy || syncBusy
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!runBusy) return
+    setNow(Date.now())
+    const id = window.setInterval(() => setNow(Date.now()), 250)
+    return () => window.clearInterval(id)
+  }, [runBusy])
+
+  useEffect(() => {
+    if (!runBusy) return
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        setNow(Date.now())
+        catchUpProgressSample()
+      }
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('focus', onVisible)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', onVisible)
+    }
+  }, [runBusy, catchUpProgressSample])
 
   return (
     <div className="app">
@@ -181,6 +220,7 @@ export default function App() {
         compareRowOffset={compareRowOffset}
         compareRowTotal={compareRowTotal}
         compareFolderTree={compareFolderTree}
+        compareRunId={compareRunId}
         comparePathPrefix={comparePathPrefix}
         compareFilter={compareFilter}
         compareBusy={compareBusy}
@@ -192,6 +232,7 @@ export default function App() {
         busy={busy}
         onMainTabChange={setMainTab}
         onImportJob={() => void importJobFile()}
+        onExportJob={() => void exportJobFfs()}
         onChangeJob={updateActiveJob}
         onBrowsePath={(index, side) => void browsePairPath(index, side)}
         onSetPairPath={setPairPath}
@@ -236,12 +277,14 @@ export default function App() {
         updatesFolder={updatesFolder}
         updatesStatus={updatesStatus}
         hardwareAcceleration={hardwareAcceleration}
+        confirmMirrorDeletes={confirmMirrorDeletes}
         busy={busy}
         onClose={closeSettings}
         onBrowseUpdatesFolder={() => void browseUpdatesFolder()}
         onUpdatesFolderChange={setUpdatesFolder}
         onCheckForUpdates={() => void checkForUpdates()}
         onHardwareAccelerationChange={setHardwareAcceleration}
+        onConfirmMirrorDeletesChange={setConfirmMirrorDeletes}
         onExportSettings={() => void exportSettings()}
         onImportSettings={() => void importSettings()}
       />
@@ -249,7 +292,7 @@ export default function App() {
       <SyncConfirmModal
         open={showDeleteConfirm}
         deleteCount={pendingSyncDeletes}
-        onConfirm={() => void confirmSync()}
+        onConfirm={(dontShowAgain) => void confirmSync(dontShowAgain)}
         onCancel={cancelSyncConfirm}
       />
 
@@ -267,7 +310,41 @@ export default function App() {
         onClearReadOnly={(failure) => void clearFailureReadOnly(failure)}
       />
 
-      <StatusBar text={statusText} showElapsed={compareBusy || syncBusy} />
+      {runBusy && progressUiExpanded ? (
+        <RunProgressPanel
+          kind={syncBusy ? 'sync' : 'compare'}
+          phaseLabel={
+            syncBusy
+              ? syncProgress?.phase === 'deleting'
+                ? 'Deleting'
+                : syncProgress?.phase === 'preparing'
+                  ? 'Preparing'
+                  : 'Synchronizing'
+              : compareProgress?.phase === 'enumerating'
+                ? 'Enumerating'
+                : 'Comparing'
+          }
+          currentPath={syncBusy ? syncProgress?.currentPath : compareProgress?.currentPath}
+          itemsDone={syncBusy ? (syncProgress?.done ?? 0) : (compareProgress?.done ?? 0)}
+          itemsTotal={syncBusy ? (syncProgress?.total ?? 0) : (compareProgress?.total ?? 0)}
+          bytesDone={syncProgress?.bytesDone ?? 0}
+          bytesTotal={syncProgress?.bytesTotal ?? 0}
+          samples={progressSamples}
+          startedAt={progressStartedAt ?? now}
+          now={now}
+          cancelling={syncBusy ? syncCancelling : compareCancelled}
+          onMinimize={() => setProgressUiExpanded(false)}
+          onCancel={() => void cancelOperation()}
+          onPlotPhysicalWidth={setProgressChartPixels}
+        />
+      ) : null}
+
+      <StatusBar
+        text={statusText}
+        showElapsed={runBusy}
+        showExpand={runBusy && !progressUiExpanded}
+        onExpand={() => setProgressUiExpanded(true)}
+      />
     </div>
   )
 }

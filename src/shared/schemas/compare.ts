@@ -113,6 +113,8 @@ export type SyncProgress = {
   phase: 'preparing' | 'copying' | 'deleting' | 'done' | 'cancelled'
   done: number
   total: number
+  bytesDone?: number
+  bytesTotal?: number
   currentPath?: string
   errors: number
 }

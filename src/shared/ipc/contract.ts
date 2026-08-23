@@ -22,6 +22,7 @@ export const IPC_CHANNELS = {
   JOB_IMPORT_JSON: 'job:importJson',
   JOB_IMPORT_INI: 'job:importIni',
   JOB_IMPORT_FFS: 'job:importFfs',
+  JOB_EXPORT_FFS: 'job:exportFfs',
   COMPARE_RUN: 'compare:run',
   COMPARE_GET_ROWS: 'compare:getRows',
   COMPARE_GET_TREE: 'compare:getTree',

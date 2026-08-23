@@ -19,4 +19,10 @@ describe('settingsSchema', () => {
   it('ships with GPU on', () => {
     expect(DEFAULT_SETTINGS.hardwareAcceleration).toBe(true)
   })
+
+  it('defaults mirror-delete confirm on for existing settings files', () => {
+    const parsed = settingsSchema.parse({ updatesFolder: '' })
+    expect(parsed.confirmMirrorDeletes).toBe(true)
+    expect(parsed.progressUiExpanded).toBe(true)
+  })
 })

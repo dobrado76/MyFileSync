@@ -41,6 +41,7 @@ type CompareGridProps = {
   filter: CompareFilter
   busy: boolean
   folderTree: FolderTreeNode | null
+  compareRunId?: string | null
   pathPrefix: string
   pathPrefixLabel?: string
   rootLabel: string
@@ -116,6 +117,7 @@ export function CompareGrid({
   filter,
   busy,
   folderTree,
+  compareRunId,
   pathPrefix,
   pathPrefixLabel,
   rootLabel,
@@ -265,6 +267,7 @@ export function CompareGrid({
         <div className="compare-tree-pane" style={{ width: treeWidth }}>
           <CompareFolderTree
             root={folderTree}
+            compareRunId={compareRunId}
             selectedPath={pathPrefix}
             rootLabel={rootLabel}
             pairSourcePaths={pairSourcePaths}

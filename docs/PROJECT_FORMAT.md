@@ -40,7 +40,8 @@ userData/
     "contentHash": "md5",
     "hashWhenSizeOrTimeDiffers": true,
     "useAdsCache": true,
-    "fastFolderCompare": false
+    "fastFolderCompare": false,
+    "useUsnJournal": true
   },
   "ads": {
     "syncAllStreams": true,
@@ -102,6 +103,8 @@ userData/
 | `lastJobId` | string \| null | null |
 | `updatesFolder` | string | `""` |
 | `hardwareAcceleration` | boolean | `true` — Chromium GPU; off applies on next launch |
+| `confirmMirrorDeletes` | boolean | `true` — ask before Sync removes dest files |
+| `progressUiExpanded` | boolean | `true` — full progress panel; off is status-bar only |
 
 Export/import settings strips `window-state.json`.
 
@@ -130,6 +133,10 @@ Field mapping for old `optionsBackup.ini` files: [BACKUPMIRROR_MIGRATION.md](BAC
 | Exclude `\folder\` and `*\name` | gitignore `/folder` and `name` |
 
 Not imported: IgnoreTimeShift, size/time-span filters, post-sync command, email, FFS versioning-on-delete (warning). ADS compare stays on — FFS does not sync streams.
+
+## FreeFileSync export
+
+**Export…** writes `.ffs_gui` or `.ffs_batch` from the current job (pairs, variant, compare method, Recycle Bin / versioning folder, include/exclude). Automatic becomes Mirror. ADS, USN, SFTP, and per-pair enable ticks are not FreeFileSync features — notes are shown after export.
 
 ## Versioning
 

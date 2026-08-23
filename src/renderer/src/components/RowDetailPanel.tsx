@@ -63,7 +63,7 @@ export function RowDetailPanel({ row, onClose }: RowDetailProps) {
       </header>
       <p className="row-detail-meta">
         {row.action} · {row.category} · ADS {row.adsDelta.equal ? 'equal' : 'diff'}
-        {row.left?.isDir || row.right?.isDir ? ' · folder (tree)' : ''}
+        {row.left?.isDir || row.right?.isDir ? ' · folder' : ''}
         {row.fromRelPath ? ` · from ${row.fromRelPath}` : ''}
       </p>
       {streams.length > 0 ? (

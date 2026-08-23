@@ -101,6 +101,11 @@ export const jobSaveRequestSchema = z.object({ job: jobSchema })
 
 export const jobImportPathRequestSchema = z.object({ path: z.string().min(1) })
 
+export const jobExportFfsRequestSchema = z.object({
+  path: z.string().min(1),
+  job: jobSchema,
+})
+
 export const compareRunRequestSchema = z.object({
   jobId: z.string().uuid(),
   runId: z.string().uuid().optional(),

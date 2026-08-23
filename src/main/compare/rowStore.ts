@@ -114,6 +114,18 @@ export class CompareRowStore {
     return this.count
   }
 
+  listSlimPaths(): Array<{ pairId: string; relPath: string; fromRelPath: string }> {
+    const out: Array<{ pairId: string; relPath: string; fromRelPath: string }> = []
+    for (let i = 0; i < this.count; i++) {
+      out.push({
+        pairId: this.pairIds[i] ?? '',
+        relPath: this.relPaths[i] ?? '',
+        fromRelPath: this.fromRelPaths[i] ?? '',
+      })
+    }
+    return out
+  }
+
   markSyncError(rowId: string): void {
     this.syncErrorIds.add(rowId)
   }

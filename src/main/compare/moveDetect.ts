@@ -56,26 +56,14 @@ export function pairMoves(creates: MoveIndexEntry[], deletes: MoveIndexEntry[]):
   const usedDelete = new Set<string>()
   const pairs: MovePair[] = []
 
-  const createDirsByName = new Map<string, MoveIndexEntry[]>()
   const createFilesByFp = new Map<string, MoveIndexEntry[]>()
-  const createDirsByFp = new Map<string, MoveIndexEntry[]>()
 
   for (const create of creates) {
-    if (create.isDir) {
-      const nameKey = `${create.pairId}|${create.name}`
-      const list = createDirsByName.get(nameKey) ?? []
-      list.push(create)
-      createDirsByName.set(nameKey, list)
-      const fp = fileKey(create)
-      const fpList = createDirsByFp.get(fp) ?? []
-      fpList.push(create)
-      createDirsByFp.set(fp, fpList)
-    } else {
-      const fp = fileKey(create)
-      const list = createFilesByFp.get(fp) ?? []
-      list.push(create)
-      createFilesByFp.set(fp, list)
-    }
+    if (create.isDir) continue
+    const fp = fileKey(create)
+    const list = createFilesByFp.get(fp) ?? []
+    list.push(create)
+    createFilesByFp.set(fp, list)
   }
 
   function take(
@@ -99,15 +87,6 @@ export function pairMoves(creates: MoveIndexEntry[], deletes: MoveIndexEntry[]):
   }
 
   for (const del of deletes) {
-    if (!del.isDir || usedDelete.has(del.id)) continue
-    const sameName = unused(createDirsByName.get(`${del.pairId}|${del.name}`), del.pairId)
-    const timed = sameName.filter((c) => timeKey(c.mtimeMs) === timeKey(del.mtimeMs))
-    const pick = timed.length === 1 ? timed[0] : sameName.length === 1 ? sameName[0] : undefined
-    if (!pick) continue
-    take(del, pick, parentDir(del.relPath) === parentDir(pick.relPath) ? 'Rename' : 'Move')
-  }
-
-  for (const del of deletes) {
     if (del.isDir || usedDelete.has(del.id)) continue
     const cands = unused(createFilesByFp.get(fileKey(del)), del.pairId).filter((c) =>
       hashesCompatible(c.hash, del.hash),
@@ -115,14 +94,6 @@ export function pairMoves(creates: MoveIndexEntry[], deletes: MoveIndexEntry[]):
     if (cands.length === 0) continue
     const sameName = cands.filter((c) => c.name === del.name)
     const pick = sameName.length === 1 ? sameName[0] : cands.length === 1 ? cands[0] : undefined
-    if (!pick) continue
-    take(del, pick, parentDir(del.relPath) === parentDir(pick.relPath) ? 'Rename' : 'Move')
-  }
-
-  for (const del of deletes) {
-    if (!del.isDir || usedDelete.has(del.id)) continue
-    const cands = unused(createDirsByFp.get(fileKey(del)), del.pairId)
-    const pick = cands.length === 1 ? cands[0] : undefined
     if (!pick) continue
     take(del, pick, parentDir(del.relPath) === parentDir(pick.relPath) ? 'Rename' : 'Move')
   }
@@ -163,8 +134,8 @@ export function toMovedRow(deleteRow: CompareRow, createRow: CompareRow, kind: '
 }
 
 /**
- * Pair Create/Delete rows already in the compare store. Does not walk the disk —
- * collapsed new folders stay one Create (BackupMirror only paired listed Add+Remove).
+ * Pair Create/Delete **files** already in the compare store. Folders stay Create/Delete
+ * so a moved directory is still one row per nested item (FreeFileSync).
  */
 export async function applyMoveDetection(store: CompareRowStore): Promise<number> {
   const stats = store.getStats()
