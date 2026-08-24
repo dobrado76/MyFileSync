@@ -259,7 +259,7 @@ export function sideRecordToFileState(
     size: record.dataSize,
     mtimeMs: record.mtimeMs,
     fileId: null,
-    primaryHash: record.primaryHash ?? null,
+    primaryHash: null,
     adsManifest: record.adsManifest,
     lastSyncGeneration: generation,
   }

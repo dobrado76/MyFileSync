@@ -15,9 +15,8 @@
 
 - Create a named job with one or more **folder pairs** (left → right paths).
 - Choose variant: **Mirror**, **Update**, **Automatic**, or **Two-way**.
-- Set compare method: size + time, or content hash (MD5 / SHA-256).
-- Set ADS policy: sync all streams (default NTFS→NTFS); optional exclude list (e.g. `Zone.Identifier`).
-- Optional: write compare cache to ADS (`MD5`, folder aggregates).
+- Set compare: **size + date/time** (and ADS when the pair has ADS enabled).
+- Set ADS policy: sync all streams (default NTFS→NTFS); optional exclude list (e.g. `Zone.Identifier`, legacy `MD5` cache).
 - Save job as JSON; export/import.
 
 **Acceptance:** Job round-trips export/import without data loss.
@@ -58,9 +57,7 @@
 | Gitignore-style filters | Shipped |
 | Recycle Bin deletes | Shipped |
 | Job JSON export/import | Shipped |
-| ADS hash cache + fast folder compare | Shipped |
 | Move/rename detection | Shipped |
-| Verify after copy | Shipped |
 | Archive-flag-only scan | Shipped |
 | Batch / CLI | Shipped |
 | Folder watch (RealTimeSync) | Shipped |

@@ -6,6 +6,7 @@ import { UpdateBanner } from './components/UpdateBanner'
 import { SettingsModal } from './components/SettingsModal'
 import { BackupMirrorWorkbench } from './components/BackupMirrorWorkbench'
 import { SyncConfirmModal } from './components/SyncConfirmModal'
+import { CreateFolderModal } from './components/CreateFolderModal'
 import { SyncFailuresModal } from './components/SyncFailuresModal'
 import { formatDisplayVersion } from '@shared/version'
 
@@ -29,6 +30,7 @@ export default function App() {
     syncProgress,
     syncBusy,
     progressUiExpanded,
+    progressPanelWidth,
     progressStartedAt,
     progressSamples,
     syncQueued,
@@ -36,6 +38,9 @@ export default function App() {
     logs,
     showDeleteConfirm,
     pendingSyncDeletes,
+    showCreateFolderConfirm,
+    pendingMissingRoots,
+    createFolderBusy,
     updatesFolder,
     updatesStatus,
     hardwareAcceleration,
@@ -70,6 +75,8 @@ export default function App() {
     runSync,
     confirmSync,
     cancelSyncConfirm,
+    confirmCreateFolders,
+    cancelCreateFolderConfirm,
     cancelOperation,
     setCompareFilter,
     selectCompareFolder,
@@ -83,6 +90,7 @@ export default function App() {
     setHardwareAcceleration,
     setConfirmMirrorDeletes,
     setProgressUiExpanded,
+    setProgressPanelWidth,
     setProgressChartPixels,
     checkForUpdates,
     runUpdate,
@@ -270,6 +278,42 @@ export default function App() {
         onPairIndexChange={setActivePairIndex}
         syncFailedRowIds={syncFailures.map((failure) => failure.rowId)}
         hasSyncErrors={syncFailures.length > 0}
+        progressPanelWidth={progressPanelWidth}
+        onProgressPanelWidth={setProgressPanelWidth}
+        progressSidebar={
+          runBusy && progressUiExpanded ? (
+            <RunProgressPanel
+              kind={syncBusy ? 'sync' : 'compare'}
+              phaseLabel={
+                syncBusy
+                  ? syncProgress?.phase === 'finishing'
+                    ? 'Finishing'
+                    : syncProgress?.phase === 'deleting'
+                      ? 'Deleting'
+                      : syncProgress?.phase === 'preparing'
+                        ? 'Preparing'
+                        : 'Synchronizing'
+                  : compareProgress?.phase === 'enumerating'
+                    ? 'Enumerating'
+                    : 'Comparing'
+              }
+              currentPath={syncBusy ? syncProgress?.currentPath : compareProgress?.currentPath}
+              currentAction={syncBusy ? syncProgress?.currentAction : undefined}
+              syncPhase={syncBusy ? syncProgress?.phase : undefined}
+              itemsDone={syncBusy ? (syncProgress?.done ?? 0) : (compareProgress?.done ?? 0)}
+              itemsTotal={syncBusy ? (syncProgress?.total ?? 0) : (compareProgress?.total ?? 0)}
+              bytesDone={syncProgress?.bytesDone ?? 0}
+              bytesTotal={syncProgress?.bytesTotal ?? 0}
+              samples={progressSamples}
+              startedAt={progressStartedAt ?? now}
+              now={now}
+              cancelling={syncBusy ? syncCancelling : compareCancelled}
+              onMinimize={() => setProgressUiExpanded(false)}
+              onCancel={() => void cancelOperation()}
+              onPlotPhysicalWidth={setProgressChartPixels}
+            />
+          ) : undefined
+        }
       />
 
       <SettingsModal
@@ -296,6 +340,14 @@ export default function App() {
         onCancel={cancelSyncConfirm}
       />
 
+      <CreateFolderModal
+        open={showCreateFolderConfirm}
+        folders={pendingMissingRoots}
+        busy={createFolderBusy}
+        onConfirm={() => void confirmCreateFolders()}
+        onCancel={cancelCreateFolderConfirm}
+      />
+
       <SyncFailuresModal
         open={showSyncFailures}
         failures={syncFailures}
@@ -309,35 +361,6 @@ export default function App() {
         onShowInFolder={(path) => void showFailureInFolder(path)}
         onClearReadOnly={(failure) => void clearFailureReadOnly(failure)}
       />
-
-      {runBusy && progressUiExpanded ? (
-        <RunProgressPanel
-          kind={syncBusy ? 'sync' : 'compare'}
-          phaseLabel={
-            syncBusy
-              ? syncProgress?.phase === 'deleting'
-                ? 'Deleting'
-                : syncProgress?.phase === 'preparing'
-                  ? 'Preparing'
-                  : 'Synchronizing'
-              : compareProgress?.phase === 'enumerating'
-                ? 'Enumerating'
-                : 'Comparing'
-          }
-          currentPath={syncBusy ? syncProgress?.currentPath : compareProgress?.currentPath}
-          itemsDone={syncBusy ? (syncProgress?.done ?? 0) : (compareProgress?.done ?? 0)}
-          itemsTotal={syncBusy ? (syncProgress?.total ?? 0) : (compareProgress?.total ?? 0)}
-          bytesDone={syncProgress?.bytesDone ?? 0}
-          bytesTotal={syncProgress?.bytesTotal ?? 0}
-          samples={progressSamples}
-          startedAt={progressStartedAt ?? now}
-          now={now}
-          cancelling={syncBusy ? syncCancelling : compareCancelled}
-          onMinimize={() => setProgressUiExpanded(false)}
-          onCancel={() => void cancelOperation()}
-          onPlotPhysicalWidth={setProgressChartPixels}
-        />
-      ) : null}
 
       <StatusBar
         text={statusText}

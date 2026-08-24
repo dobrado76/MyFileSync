@@ -14,7 +14,6 @@ import {
   plainIoMessage,
 } from '../win32/attrs'
 import { handleLockedFileCopy } from './vss'
-import { verifyCopy } from './verify'
 import { err, ioError, ok, type Result } from '@shared/result'
 import type { PlannedAction } from '@shared/schemas/compare'
 import type { JobFile } from '@shared/schemas/job'
@@ -22,8 +21,6 @@ import type { JobFile } from '@shared/schemas/job'
 export type CopyOptions = {
   excludeStreams: string[]
   deleteExtraStreams?: boolean
-  verifyAfterCopy?: boolean
-  hashAlgorithm?: 'md5' | 'sha256'
   vssEnabled?: boolean
   filters?: JobFile['filters']
   filterRoot?: string
@@ -112,12 +109,6 @@ async function copyFile(source: string, dest: string, options: CopyOptions): Pro
         const times = await copyFileTimes(source, dest)
         if (!times.ok) return times
         await applyReadOnlyFromSource(source, dest)
-        if (options.verifyAfterCopy) {
-          const verified = await verifyCopy(source, dest, options.hashAlgorithm ?? 'md5', {
-            verifyAds: shouldCopyAds(options),
-          })
-          if (!verified.ok) return verified
-        }
         return ok(undefined)
       }
       if (kernelCopy.error.code === 'cancelled' || syncAborted(options)) {
@@ -149,13 +140,6 @@ async function copyFile(source: string, dest: string, options: CopyOptions): Pro
       if (!times.ok) return times
     }
     await applyReadOnlyFromSource(source, dest)
-
-    if (options.verifyAfterCopy) {
-      const verified = await verifyCopy(source, dest, options.hashAlgorithm ?? 'md5', {
-        verifyAds: shouldCopyAds(options),
-      })
-      if (!verified.ok) return verified
-    }
 
     return ok(undefined)
   } catch (error) {
@@ -408,4 +392,16 @@ export async function deleteEntry(
     }
     return ioError(`Delete failed: ${message}`)
   }
+}
+
+export async function touchTimeEntry(action: PlannedAction): Promise<Result<void>> {
+  if (!action.sourcePath || !action.destPath) {
+    return ioError('Touch-time action is missing source or destination path.')
+  }
+  const unlocked = await clearReadOnlyIfExists(action.destPath)
+  if (!unlocked.ok) return unlocked
+  const times = await copyFileTimes(action.sourcePath, action.destPath)
+  if (!times.ok) return times
+  await applyReadOnlyFromSource(action.sourcePath, action.destPath)
+  return ok(undefined)
 }

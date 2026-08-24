@@ -157,3 +157,18 @@ export const syncRunRequestSchema = z.object({
 export const syncCancelRequestSchema = z.object({ syncRunId: z.string().uuid().optional() })
 
 export const syncGetProgressRequestSchema = z.object({ syncRunId: z.string().uuid() })
+
+export const pairRootsCheckRequestSchema = z.object({ job: jobSchema })
+
+export const pairRootMissingSchema = z.object({
+  side: z.enum(['source', 'target']),
+  path: z.string().min(1),
+})
+
+export const pairRootsCheckResponseSchema = z.object({
+  missing: z.array(pairRootMissingSchema),
+})
+
+export const pairRootsCreateRequestSchema = z.object({
+  folders: z.array(pairRootMissingSchema).min(1),
+})

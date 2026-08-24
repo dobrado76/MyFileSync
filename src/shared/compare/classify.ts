@@ -3,18 +3,14 @@ import type { CompareCategory, CompareFilter, CompareRow, CompareStats, SideReco
 import { USN_CURSOR_STREAM_NAME } from '../compare/usnAds'
 import { pairComparesAds, type JobFile } from '../schemas/job'
 
-/** Streams compare/sync should ignore: exclude list, and app-cache streams unless the job writes them. */
+/** Streams compare/sync should ignore: exclude list and app USN cursor stream. */
 export function adsIgnoredStreamNames(job: JobFile, pairId?: string): readonly string[] | 'all' {
   if (pairId) {
     const pair = job.pairs.find((item) => item.id === pairId)
     if (pair && !pairComparesAds(pair)) return 'all'
   }
   if (!job.ads.syncAllStreams) return 'all'
-  const names = [...job.ads.excludeStreams, USN_CURSOR_STREAM_NAME]
-  if (!job.ads.writeCacheToAds) {
-    names.push(job.ads.cacheStreamNames.fileHash, ...job.ads.cacheStreamNames.folderStats)
-  }
-  return names
+  return [...job.ads.excludeStreams, USN_CURSOR_STREAM_NAME]
 }
 
 export function computeAdsDelta(
@@ -52,7 +48,6 @@ export function toSideSummary(record: SideRecord): SideSummary {
     size: record.dataSize,
     mtimeMs: record.mtimeMs,
     isDir: record.isDir,
-    primaryHash: record.primaryHash,
     adsManifest: record.adsManifest,
   }
 }
@@ -65,15 +60,12 @@ export function pairIsEqual(
   pairId?: string,
 ): boolean {
   if (!left || !right) return false
-  const hashContent =
-    job.compare.method === 'content' || job.compare.hashWhenSizeOrTimeDiffers
-  return recordsEqual(left, right, hashContent, adsIgnoredStreamNames(job, pairId))
+  return recordsEqual(left, right, adsIgnoredStreamNames(job, pairId))
 }
 
 export function recordsEqual(
   a: SideRecord,
   b: SideRecord,
-  hashContent: boolean,
   ignored: readonly string[] | 'all' = [],
 ): boolean {
   if (a.isDir !== b.isDir) return false
@@ -84,14 +76,38 @@ export function recordsEqual(
     )
   }
   if (a.dataSize !== b.dataSize) return false
-  if (a.mtimeMs !== b.mtimeMs) return false
-  if (hashContent && a.primaryHash && b.primaryHash && a.primaryHash !== b.primaryHash) {
-    return false
-  }
-  return manifestsEqual(
+  const adsEqual = manifestsEqual(
     withoutIgnoredStreams(a.adsManifest, ignored),
     withoutIgnoredStreams(b.adsManifest, ignored),
   )
+  if (!adsEqual) return false
+  return a.mtimeMs === b.mtimeMs
+}
+
+/** True when size and ADS match and only last-write time differs (safe to touch timestamps). */
+export function isTimeOnlyFileDiff(
+  job: JobFile,
+  left: SideRecord,
+  right: SideRecord,
+  adsEqual: boolean,
+): boolean {
+  if (!job.behavior.touchTimeWhenSizeMatches) return false
+  if (left.isDir || right.isDir) return false
+  if (!adsEqual) return false
+  if (left.dataSize !== right.dataSize) return false
+  if (left.mtimeMs === right.mtimeMs) return false
+  return true
+}
+
+export function maybeTouchTimeAction(
+  job: JobFile,
+  action: SyncActionType,
+  left: SideRecord | undefined,
+  right: SideRecord | undefined,
+  adsEqual: boolean,
+): SyncActionType {
+  if (action !== 'Update' || !left || !right) return action
+  return isTimeOnlyFileDiff(job, left, right, adsEqual) ? 'TouchTime' : action
 }
 
 export function classifyPair(
@@ -106,9 +122,6 @@ export function classifyPair(
     right?.adsManifest,
     adsIgnoredStreamNames(job, pairId),
   )
-  const hashContent =
-    job.compare.method === 'content' ||
-    (job.compare.hashWhenSizeOrTimeDiffers && Boolean(left && right))
 
   let category: CompareCategory = 'equal'
   if (!left && right) category = 'rightOnly'
@@ -116,23 +129,28 @@ export function classifyPair(
   else if (left && right) {
     if (left.isDir && right.isDir) {
       category = adsDelta.equal ? 'equal' : 'adsDiff'
+    } else if (recordsEqual(left, right, adsIgnoredStreamNames(job, pairId))) {
+      category = 'equal'
     } else {
-      const dataEqual =
-        left.dataSize === right.dataSize &&
-        left.mtimeMs === right.mtimeMs &&
-        (!hashContent || !left.primaryHash || !right.primaryHash || left.primaryHash === right.primaryHash)
       const adsEqual = adsDelta.equal
-      if (dataEqual && adsEqual) category = 'equal'
-      else if (dataEqual && !adsEqual) category = 'adsDiff'
-      else if (!dataEqual) {
+      const dataEqual = left.dataSize === right.dataSize && left.mtimeMs === right.mtimeMs
+
+      if (dataEqual && !adsEqual) {
+        category = 'adsDiff'
+      } else if (left.dataSize === right.dataSize && adsEqual) {
         if (left.mtimeMs > right.mtimeMs) category = 'leftNewer'
         else if (right.mtimeMs > left.mtimeMs) category = 'rightNewer'
         else category = 'contentDiff'
+      } else {
+        category = 'contentDiff'
       }
     }
   }
 
-  const { action, direction, included } = planAction(category, job.variant)
+  let { action, direction, included } = planAction(category, job.variant)
+  if (left && right) {
+    action = maybeTouchTimeAction(job, action, left, right, adsDelta.equal)
+  }
 
   const row: CompareRow = {
     id: crypto.randomUUID(),
@@ -204,10 +222,22 @@ export function accountDiff(stats: CompareStats, row: CompareRow): void {
   if (row.category === 'equal') stats.equal++
   if (row.included && row.action !== 'Skip') stats.toSync++
   if (row.action === 'Create') stats.creates++
-  if (row.action === 'Update' || row.action === 'UpdateStreamsOnly') stats.updates++
+  if (row.action === 'Update' || row.action === 'UpdateStreamsOnly' || row.action === 'TouchTime') stats.updates++
   if (row.action === 'Delete') stats.deletes++
   if (row.action === 'Move' || row.action === 'Rename') stats.moves++
   if (row.category === 'adsDiff' || !row.adsDelta.equal) stats.adsDiffs++
+}
+
+/** Inverse of {@link accountDiff} when removing a row from the change list. */
+export function unaccountDiff(stats: CompareStats, row: CompareRow): void {
+  stats.total--
+  if (row.category === 'equal') stats.equal--
+  if (row.included && row.action !== 'Skip') stats.toSync--
+  if (row.action === 'Create') stats.creates--
+  if (row.action === 'Update' || row.action === 'UpdateStreamsOnly' || row.action === 'TouchTime') stats.updates--
+  if (row.action === 'Delete') stats.deletes--
+  if (row.action === 'Move' || row.action === 'Rename') stats.moves--
+  if (row.category === 'adsDiff' || !row.adsDelta.equal) stats.adsDiffs--
 }
 
 export function accountEquals(stats: CompareStats, count: number): void {

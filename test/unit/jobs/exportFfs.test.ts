@@ -24,7 +24,7 @@ describe('exportFfs', () => {
     expect(imported.ok).toBe(true)
     if (!imported.ok) return
     expect(imported.value.job.variant).toBe('mirror')
-    expect(imported.value.job.compare.method).toBe('sizeAndTime')
+    expect(imported.value.job.compare.useUsnJournal).toBe(true)
     expect(imported.value.job.delete.useRecycleBin).toBe(true)
     expect(imported.value.job.pairs).toHaveLength(2)
     expect(imported.value.job.pairs[0]?.left).toBe('F:\\Sites')

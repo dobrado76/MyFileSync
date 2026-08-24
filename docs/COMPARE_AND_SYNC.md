@@ -34,7 +34,7 @@ flowchart TD
 ### Walk (`src/main/compare/getFiles.ts`)
 
 - Both pair roots must exist and be reachable **before** either phase. A disconnected drive or missing folder is one error — Compare does not start.
-- **Two-phase (D30):** enumerate first (same filters, system skips, USN skip, missing-side listing) for an exact item count, then classify. The first pass caches `FindFirstFile` listings so Compare does not list directories again. Progress `total` is that count. ADS and content hash run only in the second pass. A cancelled enumerate does not save a USN cursor.
+- **Two-phase (D30):** enumerate first (same filters, system skips, USN skip, missing-side listing) for an exact item count, then classify. The first pass caches `FindFirstFile` listings so Compare does not list directories again. Progress `total` is that count. ADS runs only in the second pass when size and time already match. A cancelled enumerate does not save a USN cursor.
 - Input: pair roots, filters (include/exclude globs).
 - Output: **diff** rows streamed to a JSONL store (never a giant in-memory array). Equals are counted only.
 - A folder missing on the other side lists **every** nested file and folder. Sync creates or deletes those items one by one (tree count = Sync work).
@@ -54,7 +54,6 @@ type SideRecord = {
   isDir: boolean
   dataSize: number
   mtimeMs: number
-  primaryHash?: string
   adsManifest: AdsManifest
   fileId?: string  // BY_HANDLE_FILE_INFORMATION when available
 }
@@ -69,9 +68,9 @@ type SideRecord = {
 | `rightOnly` | Delete on right (mirror) or create on left (automatic) |
 | `leftNewer` | Copy left → right |
 | `rightNewer` | Copy right → left (automatic / two-way) |
-| `contentDiff` | Hash differs |
+| `contentDiff` | Size or mtime differs (or both) |
 | `adsDiff` | `$DATA` equal, manifests differ |
-| `moveCandidate` | Pair with remove+add same hash/size/manifest |
+| `moveCandidate` | Pair with remove+add same size/mtime/manifest |
 
 ### SyncAction types
 
@@ -90,21 +89,9 @@ type SideRecord = {
 
 Enabled after the paired walk:
 
-1. Pair `Delete` + `Create` **files already in the change list** with the same size and mtime (NTFS `Move` preserves both). Same name → **Move**; same parent folder → **Rename**.
+1. Pair `Delete` + `Create` **files already in the change list** — in order: same **size + mtime**, then **size + mtime within 2s**, then **size** when only one unmatched Create and Delete share that size (basename helps when several files share a size). Same parent folder → **Rename**; otherwise **Move**. No content hashing.
 2. A folder missing on one side lists every nested file and folder. Folders themselves stay Create/Delete (mkdir / rmdir), not one tree copy.
 3. Sync runs moves first, then copies, then deletes. Creates are parent-first; deletes are deepest-first. Copy skips a destination that already matches size+time.
-
-## Fast folder compare
-
-Not in the UI. If a job JSON still has `compare.fastFolderCompare` and `ads.writeCacheToAds`:
-
-1. Read folder aggregate ADS on left/right directory hosts.
-2. If `FileCount`, `FolderCount`, `FileSize`, … all match, skip recursion (BackupMirror `GetFilesFast`).
-3. On mismatch, full walk subtree.
-
-Aggregate stream names (BackupMirror parity):
-
-- `FileCount`, `FolderCount`, `FileTotCount`, `FolderTotCount`, `FileSize`, `FolderSize`
 
 ## Execute pipeline
 
@@ -137,12 +124,6 @@ When copy fails with sharing violation and `vss.enabled`:
 
 Port concept from BackupMirror AlphaVSS usage.
 
-### Verify
-
-When `behavior.verifyAfterCopy`:
-
-- Re-hash `$DATA` on dest; compare manifests (sizes; optional stream hashes).
-
 ## SQLite sync database
 
 Path: `userData/sync-jobs/{jobId}.db`
@@ -168,7 +149,7 @@ Run metadata for logs and incremental compare.
 Enables:
 
 - Two-way change detection
-- Move detection without hash pairing
+- Move detection without content hashing
 - “What changed since last run” report
 
 ## Filters

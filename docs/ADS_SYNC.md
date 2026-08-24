@@ -14,7 +14,7 @@ Examples users care about:
 | `parameters` | A1111 / Forge generation text (often in PNG tEXt on other platforms; ADS on some workflows) |
 | `VER_1`…`VER_4` | Image edit history (named streams) |
 | `FileCount`, `TotalSize`, … | Folder statistics caches |
-| `MD5` | BackupMirror compare cache |
+| `MD5` | Legacy BackupMirror compare cache (ignored by default in `excludeStreams`) |
 
 ## Host record model
 
@@ -22,16 +22,16 @@ One **host path** (file or directory) = one sync entity:
 
 ```
 Host: D:\Photos\img.png
-├── ::$DATA           size, mtime, hash
+├── ::$DATA           size, mtime
 ├── Zone.Identifier   size (optional sync)
 ├── parameters        size
-└── MD5               size (optional cache stream)
+└── MD5               size (legacy cache stream — ignored)
 ```
 
 **ADS manifest** (compare unit):
 
 ```typescript
-type AdsManifestEntry = { name: string; size: number; hash?: string }
+type AdsManifestEntry = { name: string; size: number }
 type AdsManifest = AdsManifestEntry[]  // sorted by name, excludes ::$DATA
 ```
 
@@ -68,19 +68,11 @@ Per side, per host:
 1. Size + mtime of `$DATA` from **FindFirstFile** (directory index — the file is not opened).
 2. `listStreams(host)` → manifest (name + size) via MFT `FileStreamInfo`. Does not read `$DATA`. Named ADS are tiny (integers / short text) and are only opened if a cache/preview path reads that stream.
 3. Classify:
-   - **Equal** — `$DATA` equal per job rules AND manifests equal (sizes; optional per-stream hash).
+   - **Equal** — `$DATA` equal per job rules AND manifests equal (sizes).
    - **Update** — `$DATA` differs OR manifest differs.
    - **UpdateStreamsOnly** — `$DATA` equal but manifest differs (common ADS-only drift).
 
-Fast compare (optional, BackupMirror):
-
-- Read folder aggregate streams (`FileCount`, `FileSize`, …) from ADS.
-- If left/right aggregates match, skip deep subtree walk (configurable).
-
-Optional compare cache (job `ads.writeCacheToAds`):
-
-- After hashing `$DATA`, write `MD5` stream as `v1|{hash}|{size}|{mtimeMs}` and restore host timestamps.
-- Next compare: skip re-hash **only** if cached size and mtime still match `$DATA`. Hash-only (legacy) streams are ignored.
+Fast compare via folder aggregate ADS and content-hash cache were removed. Compare is always size + date/time (+ ADS when enabled).
 
 ## Copy matrix
 
@@ -96,7 +88,6 @@ Optional compare cache (job `ads.writeCacheToAds`):
 ```
 1. Ensure parent directory exists on dest
 2. Try CopyFileEx(src, dest, COPY_FILE_RESTARTABLE)
-   - On success: verify manifest if job.verifyAfterCopy
 3. On failure (locked file + VSS enabled):
    - Snapshot volume → copy from shadow path
 4. Fallback:
@@ -120,16 +111,11 @@ When both sides have streams the other lacks:
 | Filter | Default |
 |--------|---------|
 | `syncAllStreams` | `true` |
-| `excludeStreams` | `["Zone.Identifier"]` optional user list |
-| `writeCacheToAds` | `false` (opt-in BackupMirror mode) |
-| `cacheStreamNames.fileHash` | `"MD5"` |
-| `cacheStreamNames.folderStats` | BackupMirror set |
+| `excludeStreams` | `["Zone.Identifier", "MD5"]` optional user list |
 
 **Per-pair ADS** (`pairs[].ads`, default on): when off, Compare does not list streams for that pair and Sync skips extra stream copy / `UpdateStreamsOnly`. CopyFileEx on NTFS→NTFS may still copy streams with the file body.
 
-**Compare and sync use the same ignore list.** Excluded streams (and compare-cache streams when `writeCacheToAds` is false) are not counted as adsDiff and are not copied or deleted. Otherwise a default `Zone.Identifier` exclude would leave every downloaded file “different” forever.
-
-When `writeCacheToAds` is false, known cache stream names are ignored so leftover BackupMirror `MD5` / folder-stat streams do not fill the change list.
+**Compare and sync use the same ignore list.** Excluded streams are not counted as adsDiff and are not copied or deleted. Otherwise a default `Zone.Identifier` exclude would leave every downloaded file “different” forever. Legacy BackupMirror `MD5` cache streams stay in the default exclude list so they do not fill the change list.
 
 ### NTFS → NTFS stream-only update (`UpdateStreamsOnly`)
 

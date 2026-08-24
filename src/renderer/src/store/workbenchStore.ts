@@ -3,12 +3,20 @@ import { createDefaultJob, type JobFile, type JobSummary } from '@shared/schemas
 import type { CompareFilter, CompareRow, CompareStats, FolderTreeNode, SyncFailure, SyncProgress } from '@shared/schemas/compare'
 import { appendSample, chartSampleBudget, DEFAULT_SAMPLE_BUDGET, type ProgressSample } from '@shared/progress/series'
 import type { SyncEvent } from '@shared/ipc/api'
+import type { MissingPairRoot } from '@shared/compare/pairRoots'
 import { formatDisplayVersion } from '@shared/version'
+import { syncProgressVerb } from '@shared/sync/progressPath'
 import { parsePairTreePath } from '@shared/compare/folderTree'
 import { excludeFolderNameRule, excludeThisFolderRule } from '@shared/compare/filters'
 import type { MainTab } from '../components/BackupMirrorWorkbench'
 import type { TreeFolderAction } from '../components/CompareFolderTree'
 import { resetAppWindowTitle, setAppWindowTitle } from '../windowTitle'
+
+function pairRootsStatusText(error: { message: string; hint?: string }): string {
+  return error.hint ? `${error.message} ${error.hint}` : error.message
+}
+
+type PairRootResume = 'compare' | 'sync'
 
 export type LogEntry = {
   id: string
@@ -23,12 +31,40 @@ function formatCompareStatus(stats: CompareStats): string {
   return parts.join(' · ')
 }
 
+function initialSyncProgress(): SyncProgress {
+  return {
+    phase: 'preparing',
+    done: 0,
+    total: 0,
+    bytesDone: 0,
+    bytesTotal: 0,
+    errors: 0,
+  }
+}
+
 function formatSyncStatus(progress: SyncProgress): string {
-  const verb =
-    progress.phase === 'deleting' ? 'Deleting' : progress.phase === 'copying' ? 'Copying' : 'Syncing'
   const counts = `${progress.done.toLocaleString()} / ${progress.total.toLocaleString()}`
   const path = progress.currentPath?.trim()
-  return path ? `${verb} ${counts} · ${path}` : `${verb} ${counts}`
+  if (!path) {
+    const verb =
+      progress.phase === 'preparing'
+        ? 'Preparing'
+        : progress.phase === 'finishing'
+          ? 'Finishing'
+          : progress.phase === 'deleting'
+            ? 'Deleting'
+            : 'Syncing'
+    return `${verb} ${counts}`
+  }
+  if (progress.phase === 'finishing') {
+    return `${counts} · Finishing · ${path}`
+  }
+  const verb = progress.currentAction
+    ? syncProgressVerb(progress.currentAction)
+    : progress.phase === 'deleting'
+      ? 'Deleting'
+      : 'Copying'
+  return `${counts} · ${verb} ${path}`
 }
 
 export function isJobConfigLocked(compareBusy: boolean, syncBusy: boolean): boolean {
@@ -153,6 +189,7 @@ type WorkbenchState = {
   syncProgress: SyncProgress | null
   syncBusy: boolean
   progressUiExpanded: boolean
+  progressPanelWidth: number
   progressStartedAt: number | null
   progressSamples: ProgressSample[]
   /** Compact budget: ≥ one sample per physical plot pixel, plus a dense rate tail. */
@@ -160,6 +197,10 @@ type WorkbenchState = {
   statusText: string
   logs: LogEntry[]
   showDeleteConfirm: boolean
+  showCreateFolderConfirm: boolean
+  pendingMissingRoots: MissingPairRoot[]
+  pendingRootCheckResume: PairRootResume | null
+  createFolderBusy: boolean
   pendingSyncPrefix: string
   pendingSyncDeletes: number
   updatesFolder: string
@@ -210,6 +251,8 @@ type WorkbenchState = {
   runSync: () => Promise<void>
   confirmSync: (dontShowAgain?: boolean) => Promise<void>
   cancelSyncConfirm: () => void
+  confirmCreateFolders: () => Promise<void>
+  cancelCreateFolderConfirm: () => void
   startSyncIfQueued: (stats: CompareStats) => Promise<void>
   setCompareFilter: (filter: CompareFilter) => Promise<void>
   selectCompareFolder: (pathPrefix: string) => Promise<void>
@@ -221,6 +264,7 @@ type WorkbenchState = {
   setHardwareAcceleration: (enabled: boolean) => void
   setConfirmMirrorDeletes: (enabled: boolean) => void
   setProgressUiExpanded: (expanded: boolean) => void
+  setProgressPanelWidth: (width: number, persist?: boolean) => void
   setProgressChartPixels: (plotPhysicalPx: number) => void
   checkForUpdates: () => Promise<void>
   runUpdate: () => Promise<void>
@@ -266,6 +310,10 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   statusText: 'Starting…',
   logs: [],
   showDeleteConfirm: false,
+  showCreateFolderConfirm: false,
+  pendingMissingRoots: [],
+  pendingRootCheckResume: null,
+  createFolderBusy: false,
   pendingSyncPrefix: '',
   pendingSyncDeletes: 0,
   updatesFolder: '',
@@ -273,6 +321,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   hardwareAcceleration: true,
   confirmMirrorDeletes: true,
   progressUiExpanded: true,
+  progressPanelWidth: 300,
   progressStartedAt: null,
   progressSamples: [],
   progressSampleBudget: DEFAULT_SAMPLE_BUDGET,
@@ -303,6 +352,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     const hardwareAcceleration = settings.ok ? settings.value.hardwareAcceleration : true
     const confirmMirrorDeletes = settings.ok ? settings.value.confirmMirrorDeletes : true
     const progressUiExpanded = settings.ok ? settings.value.progressUiExpanded : true
+    const progressPanelWidth = settings.ok ? settings.value.progressPanelWidth : 300
 
     set({
       initialized: true,
@@ -311,6 +361,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       hardwareAcceleration,
       confirmMirrorDeletes,
       progressUiExpanded,
+      progressPanelWidth,
       statusText: `Ready · ${formatDisplayVersion(ready.value.version)}`,
     })
 
@@ -747,6 +798,19 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     const saved = await persistActiveJobQuiet(get, set)
     if (!saved) return
     const job = get().activeJob ?? activeJob
+    const roots = await window.myFileSync.pairRootsCheck({ job })
+    if (!roots.ok) {
+      set({ statusText: pairRootsStatusText(roots.error) })
+      return
+    }
+    if (roots.value.missing.length > 0) {
+      set({
+        showCreateFolderConfirm: true,
+        pendingMissingRoots: roots.value.missing,
+        pendingRootCheckResume: 'compare',
+      })
+      return
+    }
     const runId = crypto.randomUUID()
     set({
       compareBusy: true,
@@ -840,16 +904,33 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       set({ confirmMirrorDeletes: false })
       void window.myFileSync.settingsSet({ confirmMirrorDeletes: false })
     }
-    const { activeJobId, compareRunId, pendingSyncPrefix } = get()
+    const { activeJobId, compareRunId, pendingSyncPrefix, activeJob } = get()
     if (!activeJobId || !compareRunId) return
+    if (activeJob) {
+      const roots = await window.myFileSync.pairRootsCheck({ job: activeJob })
+      if (!roots.ok) {
+        set({ statusText: pairRootsStatusText(roots.error), showDeleteConfirm: false })
+        return
+      }
+      if (roots.value.missing.length > 0) {
+        set({
+          showDeleteConfirm: false,
+          showCreateFolderConfirm: true,
+          pendingMissingRoots: roots.value.missing,
+          pendingRootCheckResume: 'sync',
+        })
+        return
+      }
+    }
     set({
       showDeleteConfirm: false,
       syncBusy: true,
       syncCancelling: false,
       showSyncFailures: false,
+      syncProgress: initialSyncProgress(),
       progressStartedAt: Date.now(),
       progressSamples: [{ at: 0, items: 0, bytes: 0 }],
-      statusText: 'Syncing…',
+      statusText: 'Preparing sync…',
     })
     const result = await window.myFileSync.syncRun({
       jobId: activeJobId,
@@ -865,6 +946,42 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
 
   cancelSyncConfirm: () =>
     set({ showDeleteConfirm: false, pendingSyncPrefix: '', pendingSyncDeletes: 0, syncQueued: false }),
+
+  confirmCreateFolders: async () => {
+    const { pendingMissingRoots, pendingRootCheckResume } = get()
+    if (pendingMissingRoots.length === 0) return
+    set({ createFolderBusy: true })
+    try {
+      const created = await window.myFileSync.pairRootsCreate({ folders: pendingMissingRoots })
+      if (!created.ok) {
+        set({ statusText: pairRootsStatusText(created.error), createFolderBusy: false })
+        return
+      }
+      const resume = pendingRootCheckResume
+      set({
+        showCreateFolderConfirm: false,
+        pendingMissingRoots: [],
+        pendingRootCheckResume: null,
+        createFolderBusy: false,
+      })
+      if (resume === 'compare') await get().runCompare()
+      else if (resume === 'sync') await get().confirmSync()
+    } catch (error) {
+      set({
+        createFolderBusy: false,
+        statusText: error instanceof Error ? error.message : 'Could not create folders.',
+      })
+    }
+  },
+
+  cancelCreateFolderConfirm: () =>
+    set({
+      showCreateFolderConfirm: false,
+      pendingMissingRoots: [],
+      pendingRootCheckResume: null,
+      createFolderBusy: false,
+      syncQueued: false,
+    }),
 
   setCompareFilter: async (filter) => {
     set({ compareFilter: filter })
@@ -1019,6 +1136,12 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     void window.myFileSync.settingsSet({ progressUiExpanded: expanded })
   },
 
+  setProgressPanelWidth: (width, persist = false) => {
+    const next = Math.round(width)
+    set({ progressPanelWidth: next })
+    if (persist) void window.myFileSync.settingsSet({ progressPanelWidth: next })
+  },
+
   setProgressChartPixels: (plotPhysicalPx) => {
     const next = chartSampleBudget(plotPhysicalPx)
     if (next > get().progressSampleBudget) set({ progressSampleBudget: next })
@@ -1090,6 +1213,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
         hardwareAcceleration: result.value.hardwareAcceleration,
         confirmMirrorDeletes: result.value.confirmMirrorDeletes,
         progressUiExpanded: result.value.progressUiExpanded,
+        progressPanelWidth: result.value.progressPanelWidth,
         statusText: 'Settings imported. Restart MyFileSync if the GPU setting changed.',
       })
     }
@@ -1339,6 +1463,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       partialRetryRowIds: rowIds,
       syncBusy: true,
       showSyncFailures: true,
+      syncProgress: initialSyncProgress(),
       progressStartedAt: Date.now(),
       progressSamples: [{ at: 0, items: 0, bytes: 0 }],
       statusText: rowIds.length === 1 ? 'Retrying failed item…' : `Retrying ${rowIds.length} items…`,

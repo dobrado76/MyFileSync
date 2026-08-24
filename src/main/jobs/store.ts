@@ -1,7 +1,7 @@
 import { app } from 'electron'
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { jobSchema, toJobSummary, type JobFile, type JobSummary } from '@shared/schemas/job'
+import { jobSchema, migrateJobForParse, toJobSummary, type JobFile, type JobSummary } from '@shared/schemas/job'
 import type { z } from 'zod'
 import { validationError, ok, ioError, type Result } from '@shared/result'
 
@@ -30,7 +30,7 @@ export async function listJobs(): Promise<JobSummary[]> {
 export async function loadJob(id: string): Promise<Result<JobFile>> {
   try {
     const raw = await fs.readFile(jobPath(id), 'utf8')
-    return ok(jobSchema.parse(JSON.parse(raw)))
+    return ok(jobSchema.parse(migrateJobForParse(JSON.parse(raw))))
   } catch {
     return ioError(`Job not found: ${id}`)
   }
@@ -60,7 +60,7 @@ export async function deleteJob(id: string): Promise<Result<{ ok: true }>> {
 export async function importJobJson(filePath: string): Promise<Result<JobFile>> {
   try {
     const raw = await fs.readFile(filePath, 'utf8')
-    const parsed = jobSchema.parse(JSON.parse(raw))
+    const parsed = jobSchema.parse(migrateJobForParse(JSON.parse(raw)))
     return saveJob(parsed)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)

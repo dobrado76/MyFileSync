@@ -17,19 +17,8 @@ export async function walkPair(
   onProgress?: (side: 'left' | 'right', currentPath: string) => void,
   isCancelled?: () => boolean,
 ): Promise<ComparePairInput> {
-  const hashContent = job.compare.method === 'content' && job.compare.contentHash !== 'none'
-  const hashAlgorithm: 'md5' | 'sha256' =
-    job.compare.contentHash === 'sha256' ? 'sha256' : 'md5'
-
   const sharedWalkOpts = {
     filters: job.filters,
-    hashContent: hashContent && job.compare.contentHash !== 'none',
-    hashAlgorithm,
-    useAdsCache: job.compare.useAdsCache,
-    writeCacheToAds: job.ads.writeCacheToAds,
-    hashCacheStreamName: job.ads.cacheStreamNames.fileHash,
-    fastFolderCompare: job.compare.fastFolderCompare,
-    folderStatStreamNames: job.ads.cacheStreamNames.folderStats,
     archiveFlagScanOnly: job.behavior.archiveFlagScanOnly,
     listAds: pairComparesAds(pair),
     isCancelled,
@@ -38,7 +27,6 @@ export async function walkPair(
   const leftRecords = await walkSide({
     ...sharedWalkOpts,
     root: pair.left,
-    otherRoot: pair.right,
     onProgress: (p) => onProgress?.('left', p),
   })
   if (isCancelled?.()) {
@@ -47,7 +35,6 @@ export async function walkPair(
   const rightRecords = await walkSide({
     ...sharedWalkOpts,
     root: pair.right,
-    otherRoot: pair.left,
     onProgress: (p) => onProgress?.('right', p),
   })
 

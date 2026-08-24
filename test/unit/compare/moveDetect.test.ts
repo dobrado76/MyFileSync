@@ -83,6 +83,38 @@ describe('pairMoves', () => {
     )
     expect(pairs).toEqual([])
   })
+
+  it('pairs when mtime differs by a couple of seconds but size matches', () => {
+    const pairs = pairMoves(
+      [file({ id: 'c', relPath: 'new/a.txt', action: 'Create', mtimeMs: 5002 })],
+      [file({ id: 'd', relPath: 'old/a.txt', action: 'Delete', mtimeMs: 5000 })],
+    )
+    expect(pairs).toHaveLength(1)
+    expect(pairs[0]?.kind).toBe('Move')
+  })
+
+  it('pairs on size alone when only one delete and one create share it', () => {
+    const pairs = pairMoves(
+      [file({ id: 'c', relPath: 'new/a.txt', action: 'Create', mtimeMs: 9000 })],
+      [file({ id: 'd', relPath: 'old/a.txt', action: 'Delete', mtimeMs: 1000 })],
+    )
+    expect(pairs).toHaveLength(1)
+    expect(pairs[0]?.kind).toBe('Move')
+  })
+
+  it('does not pair two same-size files when both sides are ambiguous', () => {
+    const pairs = pairMoves(
+      [
+        file({ id: 'c1', relPath: 'new/a.txt', action: 'Create', size: 50 }),
+        file({ id: 'c2', relPath: 'new/b.txt', action: 'Create', size: 50 }),
+      ],
+      [
+        file({ id: 'd1', relPath: 'old/a.txt', action: 'Delete', size: 50 }),
+        file({ id: 'd2', relPath: 'old/b.txt', action: 'Delete', size: 50 }),
+      ],
+    )
+    expect(pairs).toHaveLength(2)
+  })
 })
 
 const temps: string[] = []

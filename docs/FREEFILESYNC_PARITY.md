@@ -16,16 +16,16 @@ Legend: **Yes** / **Partial** / **No** / **Better** (MyFileSync does more)
 | Side-by-side compare view | Yes | Yes |
 | Color-coded diff rows | Yes | Yes |
 | Per-row include/exclude | Limited | Yes |
-| Move/rename detection | Yes (DB + file IDs) | Yes (hash / ADS / DB) |
+| Move/rename detection | Yes (DB + file IDs) | Yes (size/mtime / ADS / DB) |
 | Parallel copy per device | Yes | Yes |
 | Parallel folder traversal | Yes | Yes |
 | Compare: size + time | Yes | Yes |
-| Compare: content hash | Yes | Yes (MD5 / SHA-256) |
+| Compare: content hash | Yes | **No** (removed — size + time only) |
 | Filters include/exclude | Wildcards | Yes (gitignore-style) |
 | Filters size/date/attrs | Yes | Partial (archive-flag scan; no size/date rules UI) |
 | Versioning folder | Yes | Yes |
 | Recycle Bin for deletes | Optional | Yes (default on) |
-| Verify after copy | Yes | Yes |
+| Verify after copy | Yes | **No** (removed) |
 | VSS / copy locked files | Batch | Partial (stub / hint) |
 | Batch jobs | Yes | Yes |
 | CLI unattended run | Yes | Yes |
@@ -43,8 +43,6 @@ Legend: **Yes** / **Partial** / **No** / **Better** (MyFileSync does more)
 | Compare stream manifests | No | **Better** |
 | UpdateStreamsOnly action | No | **Better** |
 | Directory ADS | No | **Better** |
-| Optional MD5 cache in ADS | No | **Better** |
-| Fast folder compare via ADS stats | No | **Better** |
 
 ## BackupMirror features not in FFS
 

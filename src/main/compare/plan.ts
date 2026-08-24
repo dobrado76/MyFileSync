@@ -32,6 +32,7 @@ export function rowToPlannedAction(
       break
     case 'Update':
     case 'UpdateStreamsOnly':
+    case 'TouchTime':
       if (row.direction === 'rightToLeft') {
         sourcePath = rightPath
         destPath = leftPath

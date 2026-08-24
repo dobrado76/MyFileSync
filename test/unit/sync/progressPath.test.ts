@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { PlannedAction } from '@shared/schemas/compare'
-import { syncProgressPath } from '@shared/sync/progressPath'
+import { syncProgressPath, syncProgressVerb } from '@shared/sync/progressPath'
 
 function action(partial: Partial<PlannedAction>): PlannedAction {
   return {
@@ -30,5 +30,16 @@ describe('syncProgressPath', () => {
       'D:\\src\\sub\\file.txt',
     )
     expect(syncProgressPath(action({}))).toBe('sub/file.txt')
+  })
+})
+
+describe('syncProgressVerb', () => {
+  it('maps sync actions to present-tense labels', () => {
+    expect(syncProgressVerb('Create')).toBe('Copying')
+    expect(syncProgressVerb('Update')).toBe('Updating')
+    expect(syncProgressVerb('UpdateStreamsOnly')).toBe('Updating')
+    expect(syncProgressVerb('Delete')).toBe('Deleting')
+    expect(syncProgressVerb('Move')).toBe('Moving')
+    expect(syncProgressVerb('Rename')).toBe('Renaming')
   })
 })

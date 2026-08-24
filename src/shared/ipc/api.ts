@@ -1,3 +1,4 @@
+import type { MissingPairRoot } from '../compare/pairRoots'
 import type { Result } from '../result'
 import type { AdsManifest } from '../ads/paths'
 import type { Settings } from '../schemas/settings'
@@ -52,6 +53,11 @@ export type OpenPathResponse = { ok: true }
 
 export type ClearReadOnlyRequest = { path: string }
 export type ClearReadOnlyResponse = { ok: true }
+
+export type PairRootsCheckRequest = { job: JobFile }
+export type PairRootsCheckResponse = { missing: MissingPairRoot[] }
+export type PairRootsCreateRequest = { folders: MissingPairRoot[] }
+export type PairRootsCreateResponse = { ok: true }
 
 export type AdsListRequest = { path: string }
 export type AdsListResponse = { path: string; manifest: AdsManifest }
@@ -113,6 +119,8 @@ export type MyFileSyncApi = {
   showItemInFolder: (req: ShowItemInFolderRequest) => Promise<Result<ShowItemInFolderResponse>>
   openPath: (req: OpenPathRequest) => Promise<Result<OpenPathResponse>>
   clearReadOnly: (req: ClearReadOnlyRequest) => Promise<Result<ClearReadOnlyResponse>>
+  pairRootsCheck: (req: PairRootsCheckRequest) => Promise<Result<PairRootsCheckResponse>>
+  pairRootsCreate: (req: PairRootsCreateRequest) => Promise<Result<PairRootsCreateResponse>>
   settingsGet: () => Promise<Result<Settings>>
   settingsSet: (partial: Partial<Settings>) => Promise<Result<Settings>>
   settingsExport: (req: { path: string }) => Promise<Result<{ path: string }>>

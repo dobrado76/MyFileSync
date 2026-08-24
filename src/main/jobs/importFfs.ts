@@ -27,13 +27,9 @@ export function parseFfsXml(xml: string, sourceName: string): Result<FfsImportRe
   const compareBlock = inner(trimmed, 'Compare') ?? ''
   const compareVariant = text(compareBlock, 'Variant')?.toLowerCase() ?? ''
   if (compareVariant === 'content') {
-    job.compare.method = 'content'
-    job.compare.contentHash = 'md5'
+    warnings.push('FreeFileSync content-hash compare is not supported — using size + date/time.')
   } else if (compareVariant === 'size') {
-    job.compare.method = 'sizeAndTime'
     warnings.push('FreeFileSync Size-only compare is not supported — using size + date/time.')
-  } else {
-    job.compare.method = 'sizeAndTime'
   }
 
   const symlinks = text(compareBlock, 'Symlinks')

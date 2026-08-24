@@ -127,7 +127,7 @@ export function serializeFfsXml(job: unknown, xmlType: 'GUI' | 'BATCH' = 'GUI'):
     warnings.push('Gitignore negation filters (!) are not supported by FreeFileSync and were omitted.')
   }
 
-  const compareVariant = parsed.data.compare.method === 'content' ? 'Content' : 'TimeAndSize'
+  const compareVariant = 'TimeAndSize'
   const pairXml = pairs
     .map(
       (pair) =>

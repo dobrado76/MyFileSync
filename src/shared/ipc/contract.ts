@@ -8,6 +8,8 @@ export const IPC_CHANNELS = {
   APP_SHOW_ITEM_IN_FOLDER: 'app:showItemInFolder',
   APP_OPEN_PATH: 'app:openPath',
   PATH_CLEAR_READ_ONLY: 'path:clearReadOnly',
+  PAIR_ROOTS_CHECK: 'pairRoots:check',
+  PAIR_ROOTS_CREATE: 'pairRoots:create',
   ADS_LIST: 'ads:list',
   ADS_READ_STREAM: 'ads:readStream',
   ADS_COPY: 'ads:copy',

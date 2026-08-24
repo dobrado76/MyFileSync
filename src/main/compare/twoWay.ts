@@ -3,6 +3,7 @@ import { minimatch } from 'minimatch'
 import {
   adsIgnoredStreamNames,
   computeAdsDelta,
+  maybeTouchTimeAction,
   recordsEqual,
   toSideSummary,
 } from '@shared/compare/classify'
@@ -107,7 +108,6 @@ function planTwoWayAction(
 function sideChanged(
   current: SideRecord | undefined,
   prev: FileState | undefined,
-  hashContent: boolean,
   ignored: readonly string[] | 'all',
 ): boolean {
   if (!current && prev) return true
@@ -118,10 +118,9 @@ function sideChanged(
       isDir: false,
       dataSize: prev.size,
       mtimeMs: prev.mtimeMs,
-      primaryHash: prev.primaryHash ?? undefined,
       adsManifest: prev.adsManifest,
     }
-    return !recordsEqual(current, prevRecord, hashContent, ignored)
+    return !recordsEqual(current, prevRecord, ignored)
   }
   return false
 }
@@ -136,9 +135,6 @@ export function classifyTwoWayPair(
 ): CompareRow {
   const ignored = adsIgnoredStreamNames(job, pairId)
   const adsDelta = computeAdsDelta(left?.adsManifest, right?.adsManifest, ignored)
-  const hashContent =
-    job.compare.method === 'content' ||
-    (job.compare.hashWhenSizeOrTimeDiffers && Boolean(left && right))
 
   const prevLeft = prevStates?.left
   const prevRight = prevStates?.right
@@ -163,37 +159,37 @@ export function classifyTwoWayPair(
       category = 'leftOnly'
     }
   } else if (left && right) {
-    const dataEqual =
-      left.dataSize === right.dataSize &&
-      left.mtimeMs === right.mtimeMs &&
-      (!hashContent ||
-        !left.primaryHash ||
-        !right.primaryHash ||
-        left.primaryHash === right.primaryHash)
-    const adsEqual = adsDelta.equal
-
-    if (dataEqual && adsEqual) {
+    if (recordsEqual(left, right, ignored)) {
       category = 'equal'
-    } else if (dataEqual && !adsEqual) {
-      category = 'adsDiff'
+    } else if (left.isDir && right.isDir) {
+      category = adsDelta.equal ? 'equal' : 'adsDiff'
     } else {
-      const leftChangedSinceSync = sideChanged(left, prevLeft, hashContent, ignored)
-      const rightChangedSinceSync = sideChanged(right, prevRight, hashContent, ignored)
+      const dataEqual = left.dataSize === right.dataSize && left.mtimeMs === right.mtimeMs
+      const adsEqual = adsDelta.equal
 
-      if (leftChangedSinceSync && rightChangedSinceSync) {
-        if (left.mtimeMs > right.mtimeMs) category = 'leftNewer'
-        else if (right.mtimeMs > left.mtimeMs) category = 'rightNewer'
-        else category = 'conflict'
-      } else if (leftChangedSinceSync) {
-        category = left.mtimeMs >= right.mtimeMs ? 'leftNewer' : 'contentDiff'
-      } else if (rightChangedSinceSync) {
-        category = right.mtimeMs >= left.mtimeMs ? 'rightNewer' : 'contentDiff'
-      } else if (left.mtimeMs > right.mtimeMs) {
-        category = 'leftNewer'
-      } else if (right.mtimeMs > left.mtimeMs) {
-        category = 'rightNewer'
+      if (dataEqual && adsEqual) {
+        category = 'equal'
+      } else if (dataEqual && !adsEqual) {
+        category = 'adsDiff'
       } else {
-        category = 'contentDiff'
+        const leftChangedSinceSync = sideChanged(left, prevLeft, ignored)
+        const rightChangedSinceSync = sideChanged(right, prevRight, ignored)
+
+        if (leftChangedSinceSync && rightChangedSinceSync) {
+          if (left.mtimeMs > right.mtimeMs) category = 'leftNewer'
+          else if (right.mtimeMs > left.mtimeMs) category = 'rightNewer'
+          else category = 'conflict'
+        } else if (leftChangedSinceSync) {
+          category = left.mtimeMs >= right.mtimeMs ? 'leftNewer' : 'contentDiff'
+        } else if (rightChangedSinceSync) {
+          category = right.mtimeMs >= left.mtimeMs ? 'rightNewer' : 'contentDiff'
+        } else if (left.mtimeMs > right.mtimeMs) {
+          category = 'leftNewer'
+        } else if (right.mtimeMs > left.mtimeMs) {
+          category = 'rightNewer'
+        } else {
+          category = 'contentDiff'
+        }
       }
     }
   }
@@ -208,6 +204,10 @@ export function classifyTwoWayPair(
     action = 'Delete'
     direction = 'rightToLeft'
     included = true
+  }
+
+  if (left && right) {
+    action = maybeTouchTimeAction(job, action, left, right, adsDelta.equal)
   }
 
   const row: CompareRow = {

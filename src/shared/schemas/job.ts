@@ -40,21 +40,11 @@ export const jobSchema = z.object({
   ui: jobUiSchema.default({}),
   variant: z.enum(['mirror', 'update', 'automatic', 'twoWay']),
   compare: z.object({
-    method: z.enum(['sizeAndTime', 'content']),
-    contentHash: z.enum(['md5', 'sha256', 'none']),
-    hashWhenSizeOrTimeDiffers: z.boolean(),
-    useAdsCache: z.boolean(),
-    fastFolderCompare: z.boolean(),
     useUsnJournal: z.boolean().default(true),
   }),
   ads: z.object({
     syncAllStreams: z.boolean(),
     excludeStreams: z.array(z.string()),
-    writeCacheToAds: z.boolean(),
-    cacheStreamNames: z.object({
-      fileHash: z.string(),
-      folderStats: z.array(z.string()),
-    }),
   }),
   filters: z.object({
     include: z.array(z.string()),
@@ -68,8 +58,9 @@ export const jobSchema = z.object({
     enabled: z.boolean(),
   }),
   behavior: z.object({
-    verifyAfterCopy: z.boolean(),
     archiveFlagScanOnly: z.boolean().default(false),
+    /** When on, same-size files with only a timestamp mismatch get SetFileTime instead of a full copy. */
+    touchTimeWhenSizeMatches: z.boolean().default(false),
   }),
   parallelism: z.object({
     compareWorkers: z.number().int().min(1).max(32),
@@ -112,6 +103,49 @@ export type JobSummary = {
   enabledPairCount: number
 }
 
+/** Legacy compare-cache stream name from BackupMirror — always ignored, not synced. */
+export const LEGACY_MD5_CACHE_STREAM = 'MD5'
+
+/**
+ * Normalize legacy job JSON before Zod parse so older jobs still load after field removals.
+ */
+export function migrateJobForParse(raw: unknown): unknown {
+  if (!raw || typeof raw !== 'object') return raw
+  const job = { ...(raw as Record<string, unknown>) }
+
+  if (job.compare && typeof job.compare === 'object') {
+    const compare = { ...(job.compare as Record<string, unknown>) }
+    delete compare.method
+    delete compare.contentHash
+    delete compare.hashWhenSizeOrTimeDiffers
+    delete compare.useAdsCache
+    delete compare.fastFolderCompare
+    job.compare = compare
+  }
+
+  if (job.ads && typeof job.ads === 'object') {
+    const ads = { ...(job.ads as Record<string, unknown>) }
+    delete ads.writeCacheToAds
+    delete ads.cacheStreamNames
+    const exclude = Array.isArray(ads.excludeStreams)
+      ? [...(ads.excludeStreams as string[])]
+      : ['Zone.Identifier']
+    if (!exclude.includes(LEGACY_MD5_CACHE_STREAM)) {
+      exclude.push(LEGACY_MD5_CACHE_STREAM)
+    }
+    ads.excludeStreams = exclude
+    job.ads = ads
+  }
+
+  if (job.behavior && typeof job.behavior === 'object') {
+    const behavior = { ...(job.behavior as Record<string, unknown>) }
+    delete behavior.verifyAfterCopy
+    job.behavior = behavior
+  }
+
+  return job
+}
+
 export function createDefaultJob(name = 'New job'): JobFile {
   return {
     format: 'myfilesync-job',
@@ -129,28 +163,11 @@ export function createDefaultJob(name = 'New job'): JobFile {
     ],
     variant: 'mirror',
     compare: {
-      method: 'sizeAndTime',
-      contentHash: 'md5',
-      hashWhenSizeOrTimeDiffers: true,
-      useAdsCache: false,
-      fastFolderCompare: false,
       useUsnJournal: true,
     },
     ads: {
       syncAllStreams: true,
-      excludeStreams: ['Zone.Identifier'],
-      writeCacheToAds: false,
-      cacheStreamNames: {
-        fileHash: 'MD5',
-        folderStats: [
-          'FileCount',
-          'FolderCount',
-          'FileTotCount',
-          'FolderTotCount',
-          'FileSize',
-          'FolderSize',
-        ],
-      },
+      excludeStreams: ['Zone.Identifier', LEGACY_MD5_CACHE_STREAM],
     },
     filters: {
       include: [],
@@ -164,8 +181,8 @@ export function createDefaultJob(name = 'New job'): JobFile {
       enabled: false,
     },
     behavior: {
-      verifyAfterCopy: false,
       archiveFlagScanOnly: false,
+      touchTimeWhenSizeMatches: false,
     },
     parallelism: {
       compareWorkers: 4,

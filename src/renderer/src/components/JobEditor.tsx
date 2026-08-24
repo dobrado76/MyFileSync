@@ -128,33 +128,31 @@ export function JobEditor({ job, open, onClose, onSave, onChange, onBrowse }: Jo
 
           {tab === 'compare' && (
             <>
-              <label className="settings-label">
-                Compare method
-                <select
-                  className="settings-input"
-                  value={job.compare.method}
+              <p className="settings-hint">
+                Files are compared by <strong>size + date/time</strong> and alternate streams (when ADS
+                is enabled for the pair).
+              </p>
+              <label className="check-row">
+                <input
+                  type="checkbox"
+                  checked={job.compare.useUsnJournal}
                   onChange={(e) =>
-                    onChange({
-                      compare: {
-                        ...job.compare,
-                        method: e.target.value as JobFile['compare']['method'],
-                      },
-                    })
+                    onChange({ compare: { ...job.compare, useUsnJournal: e.target.checked } })
                   }
-                >
-                  <option value="sizeAndTime">Size + time</option>
-                  <option value="content">Content hash</option>
-                </select>
+                />
+                Use NTFS change journal (skip unchanged folders)
               </label>
               <label className="check-row">
                 <input
                   type="checkbox"
-                  checked={job.behavior.verifyAfterCopy}
+                  checked={job.behavior.touchTimeWhenSizeMatches}
                   onChange={(e) =>
-                    onChange({ behavior: { ...job.behavior, verifyAfterCopy: e.target.checked } })
+                    onChange({
+                      behavior: { ...job.behavior, touchTimeWhenSizeMatches: e.target.checked },
+                    })
                   }
                 />
-                Verify after copy
+                Touch timestamps only when file size already matches
               </label>
             </>
           )}
@@ -168,14 +166,6 @@ export function JobEditor({ job, open, onClose, onSave, onChange, onBrowse }: Jo
                   onChange={(e) => onChange({ ads: { ...job.ads, syncAllStreams: e.target.checked } })}
                 />
                 Sync all alternate streams
-              </label>
-              <label className="check-row">
-                <input
-                  type="checkbox"
-                  checked={job.ads.writeCacheToAds}
-                  onChange={(e) => onChange({ ads: { ...job.ads, writeCacheToAds: e.target.checked } })}
-                />
-                Write compare cache to ADS (MD5 / folder stats)
               </label>
             </>
           )}

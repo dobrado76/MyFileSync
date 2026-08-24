@@ -8,9 +8,9 @@ describe('settingsMatch', () => {
   })
 
   it('requires every word to match', () => {
-    const text = 'Write hash cache to ADS restore timestamps'
-    expect(settingsMatch('hash ads', text)).toBe(true)
+    const text = 'Touch timestamps only when file size already matches'
+    expect(settingsMatch('touch timestamp', text)).toBe(true)
     expect(settingsMatch('recycle', text)).toBe(false)
-    expect(settingsMatch('hash recycle', text)).toBe(false)
+    expect(settingsMatch('touch recycle', text)).toBe(false)
   })
 })

@@ -11,7 +11,6 @@ export type MoveIndexEntry = {
   mtimeMs: number
   name: string
   parent: string
-  hash?: string
 }
 
 export type MovePair = {
@@ -21,6 +20,9 @@ export type MovePair = {
   oldRelPath: string
   kind: 'Move' | 'Rename'
 }
+
+/** FAT / coarse timestamp grids and post-copy clock skew. */
+export const MOVE_DETECT_MTIME_TOLERANCE_MS = 2000
 
 function parentDir(relPath: string): string {
   const normalized = relPath.replace(/\\/g, '/')
@@ -38,39 +40,45 @@ function timeKey(mtimeMs: number): number {
   return Math.round(mtimeMs)
 }
 
-function fileKey(entry: MoveIndexEntry): string {
+function exactFileKey(entry: MoveIndexEntry): string {
   return `${entry.pairId}|${entry.size}|${timeKey(entry.mtimeMs)}`
 }
 
-function hashesCompatible(a?: string, b?: string): boolean {
-  if (!a || !b) return true
-  return a === b
+function sizeKey(entry: MoveIndexEntry): string {
+  return `${entry.pairId}|${entry.size}`
+}
+
+function mtimesLooselyMatch(a: number, b: number): boolean {
+  return Math.abs(a - b) <= MOVE_DETECT_MTIME_TOLERANCE_MS
+}
+
+function moveKind(deleteEntry: MoveIndexEntry, createEntry: MoveIndexEntry): 'Move' | 'Rename' {
+  return parentDir(deleteEntry.relPath) === parentDir(createEntry.relPath) ? 'Rename' : 'Move'
+}
+
+/** Prefer matching basename, then a sole candidate. */
+export function pickMoveCandidate(
+  deleteEntry: MoveIndexEntry,
+  candidates: MoveIndexEntry[],
+): MoveIndexEntry | undefined {
+  if (candidates.length === 0) return undefined
+
+  const sameName = candidates.filter((c) => c.name === deleteEntry.name)
+  if (sameName.length === 1) return sameName[0]
+  if (candidates.length === 1) return candidates[0]
+  return undefined
 }
 
 /**
- * BackupMirror DetectMovedRenamed: pair Remove+Add with the same size and mtime
- * (NTFS Move preserves both). Same basename → Move; same parent → Rename.
+ * Pair Remove+Add rows into Move/Rename.
+ * Passes: exact size+mtime → size+loose mtime → uniquely-sized leftover (no hashing).
  */
 export function pairMoves(creates: MoveIndexEntry[], deletes: MoveIndexEntry[]): MovePair[] {
   const usedCreate = new Set<string>()
   const usedDelete = new Set<string>()
   const pairs: MovePair[] = []
 
-  const createFilesByFp = new Map<string, MoveIndexEntry[]>()
-
-  for (const create of creates) {
-    if (create.isDir) continue
-    const fp = fileKey(create)
-    const list = createFilesByFp.get(fp) ?? []
-    list.push(create)
-    createFilesByFp.set(fp, list)
-  }
-
-  function take(
-    deleteEntry: MoveIndexEntry,
-    createEntry: MoveIndexEntry,
-    kind: 'Move' | 'Rename',
-  ): void {
+  function take(deleteEntry: MoveIndexEntry, createEntry: MoveIndexEntry): void {
     usedDelete.add(deleteEntry.id)
     usedCreate.add(createEntry.id)
     pairs.push({
@@ -78,24 +86,76 @@ export function pairMoves(creates: MoveIndexEntry[], deletes: MoveIndexEntry[]):
       createId: createEntry.id,
       newRelPath: createEntry.relPath,
       oldRelPath: deleteEntry.relPath,
-      kind,
+      kind: moveKind(deleteEntry, createEntry),
     })
   }
 
-  function unused(list: MoveIndexEntry[] | undefined, pairId: string): MoveIndexEntry[] {
+  function unusedCreates(list: MoveIndexEntry[] | undefined, pairId: string): MoveIndexEntry[] {
     return (list ?? []).filter((c) => c.pairId === pairId && !usedCreate.has(c.id))
   }
 
+  function indexCreates(keyFn: (entry: MoveIndexEntry) => string | null): Map<string, MoveIndexEntry[]> {
+    const map = new Map<string, MoveIndexEntry[]>()
+    for (const create of creates) {
+      if (create.isDir || usedCreate.has(create.id)) continue
+      const key = keyFn(create)
+      if (!key) continue
+      const list = map.get(key) ?? []
+      list.push(create)
+      map.set(key, list)
+    }
+    return map
+  }
+
+  function passIndexed(keyFn: (entry: MoveIndexEntry) => string | null): void {
+    const createMap = indexCreates(keyFn)
+    for (const del of deletes) {
+      if (del.isDir || usedDelete.has(del.id)) continue
+      const key = keyFn(del)
+      if (!key) continue
+      const pick = pickMoveCandidate(del, unusedCreates(createMap.get(key), del.pairId))
+      if (pick) take(del, pick)
+    }
+  }
+
+  passIndexed(exactFileKey)
+
   for (const del of deletes) {
     if (del.isDir || usedDelete.has(del.id)) continue
-    const cands = unused(createFilesByFp.get(fileKey(del)), del.pairId).filter((c) =>
-      hashesCompatible(c.hash, del.hash),
+    const cands = creates.filter(
+      (c) =>
+        !c.isDir &&
+        !usedCreate.has(c.id) &&
+        c.pairId === del.pairId &&
+        c.size === del.size &&
+        mtimesLooselyMatch(c.mtimeMs, del.mtimeMs),
     )
-    if (cands.length === 0) continue
-    const sameName = cands.filter((c) => c.name === del.name)
-    const pick = sameName.length === 1 ? sameName[0] : cands.length === 1 ? cands[0] : undefined
-    if (!pick) continue
-    take(del, pick, parentDir(del.relPath) === parentDir(pick.relPath) ? 'Rename' : 'Move')
+    const pick = pickMoveCandidate(del, cands)
+    if (pick) take(del, pick)
+  }
+
+  const deletesBySize = new Map<string, MoveIndexEntry[]>()
+  const createsBySize = new Map<string, MoveIndexEntry[]>()
+  for (const del of deletes) {
+    if (del.isDir || usedDelete.has(del.id)) continue
+    const key = sizeKey(del)
+    const list = deletesBySize.get(key) ?? []
+    list.push(del)
+    deletesBySize.set(key, list)
+  }
+  for (const create of creates) {
+    if (create.isDir || usedCreate.has(create.id)) continue
+    const key = sizeKey(create)
+    const list = createsBySize.get(key) ?? []
+    list.push(create)
+    createsBySize.set(key, list)
+  }
+  for (const [key, dels] of deletesBySize) {
+    const cres = createsBySize.get(key) ?? []
+    if (dels.length !== 1 || cres.length !== 1) continue
+    const del = dels[0]!
+    const pick = pickMoveCandidate(del, cres)
+    if (pick) take(del, pick)
   }
 
   return pairs
@@ -115,7 +175,6 @@ export function entryFromRow(row: CompareRow): MoveIndexEntry | undefined {
     mtimeMs: side.mtimeMs,
     name: baseName(row.relPath),
     parent: parentDir(row.relPath),
-    hash: side.primaryHash,
   }
 }
 

@@ -1,11 +1,15 @@
 import { formatBytes, formatByteRate, formatClock, formatEta, formatItemRate } from '@shared/progress/format'
+import type { SyncActionType, SyncProgress } from '@shared/schemas/compare'
 import { estimateEtaMs, projectedDurationMs, recentRate, type ProgressSample } from '@shared/progress/series'
+import { syncProgressVerb } from '@shared/sync/progressPath'
 import { ProgressAreaChart } from './ProgressAreaChart'
 
 type RunProgressPanelProps = {
   kind: 'compare' | 'sync'
   phaseLabel: string
   currentPath?: string
+  currentAction?: SyncActionType
+  syncPhase?: SyncProgress['phase']
   itemsDone: number
   itemsTotal: number
   bytesDone: number
@@ -23,6 +27,8 @@ export function RunProgressPanel({
   kind,
   phaseLabel,
   currentPath,
+  currentAction,
+  syncPhase,
   itemsDone,
   itemsTotal,
   bytesDone,
@@ -42,15 +48,16 @@ export function RunProgressPanel({
   const projectedMs = projectedDurationMs(elapsedMs, etaMs)
   const itemRate = recentRate(samples, 'items')
   const byteRate = recentRate(samples, 'bytes')
-  const percent = itemsTotal > 0 ? Math.min(100, Math.round((itemsDone / itemsTotal) * 100)) : null
+  const percent =
+    itemsTotal > 0 && syncPhase !== 'finishing' && syncPhase !== 'preparing'
+      ? Math.min(100, Math.round((itemsDone / itemsTotal) * 100))
+      : null
   const title =
     percent === null ? `${phaseLabel}…` : `${phaseLabel}… ${percent}%`
-  const action =
-    currentPath?.trim()
-      ? currentPath
-      : cancelling
-        ? 'Cancelling…'
-        : 'Working…'
+  const path = currentPath?.trim()
+  const syncVerb =
+    kind === 'sync' && currentAction && syncPhase !== 'finishing' ? syncProgressVerb(currentAction) : null
+  const pathTitle = syncVerb && path ? `${syncVerb} ${path}` : path
 
   return (
     <section className="run-progress" aria-label="Run progress">
@@ -69,8 +76,21 @@ export function RunProgressPanel({
             </svg>
           </button>
         </div>
-        <p className="run-progress-current" title={currentPath}>
-          {action}
+        <p className="run-progress-current" title={pathTitle}>
+          {path ? (
+            syncVerb ? (
+              <span className="run-progress-current-inner">
+                <span className="run-progress-verb">{syncVerb}</span>
+                <span className="run-progress-path">{path}</span>
+              </span>
+            ) : (
+              path
+            )
+          ) : cancelling ? (
+            'Cancelling…'
+          ) : (
+            'Working…'
+          )}
         </p>
       </header>
 

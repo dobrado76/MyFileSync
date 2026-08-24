@@ -61,9 +61,6 @@ export async function importIni(filePath: string): Promise<Result<IniImportResul
       case 'UseVolumeShadowCopy':
         job.vss.enabled = parseBool(value)
         break
-      case 'FastCompare':
-        job.compare.fastFolderCompare = parseBool(value)
-        break
       case 'FileFilter':
         if (!job.filters.exclude.includes(value)) job.filters.exclude.push(value)
         break
@@ -84,9 +81,6 @@ export async function importIni(filePath: string): Promise<Result<IniImportResul
 
   job.pairs = pairs
   job.variant = variant
-  job.compare.useAdsCache = true
-  job.compare.fastFolderCompare = true
-  job.ads.writeCacheToAds = true
   job.delete.useRecycleBin = false
   warnings.push(
     'BackupMirror used permanent deletes — imported job has useRecycleBin=false. Consider enabling Recycle Bin in job settings.',

@@ -1,15 +1,11 @@
-import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import path from 'node:path'
-import { createHash } from 'node:crypto'
 import { compilePathFilter, isSystemSkipPath } from '@shared/compare/filters'
 import { classifyPair, pairIsEqual } from '@shared/compare/classify'
 import type { AdsManifest } from '@shared/ads/paths'
 import type { CompareRow, SideRecord, SideSummary } from '@shared/schemas/compare'
 import { pairComparesAds, type JobFile, type JobPair } from '@shared/schemas/job'
-import { readFileHashCache, writeFileHashCache, readFolderStats } from '../ads/cache'
 import { listStreamsSync } from '../ads/list'
-import { canSkipSubtree } from './fastFolder'
 import { yieldToEventLoop } from '../win32/nativeLock'
 import { readDirectoryWin32, type DirEntry } from '../win32/find'
 import { classifyTwoWayPair } from './twoWay'
@@ -109,7 +105,6 @@ export async function getFiles(options: GetFilesOptions): Promise<GetFilesResult
 
   const job = options.job
   const checkAds = pairComparesAds(options.pair)
-  const hashContent = job.compare.method === 'content' && job.compare.contentHash !== 'none'
   const twoWayPromotesEquals =
     job.variant === 'twoWay' &&
     job.syncRules.some((rule) => rule.action === 'forceMirror' || rule.action === 'forceUpdate')
@@ -173,27 +168,16 @@ export async function getFiles(options: GetFilesOptions): Promise<GetFilesResult
       }
 
       const rightOk = Boolean(item.rightEnt && !item.rightEnt.isDir && !item.rightEnt.isSymlink)
-      const sizeTimeEqual =
-        rightOk &&
-        item.leftEnt.size === item.rightEnt!.size &&
-        item.leftEnt.mtimeMs === item.rightEnt!.mtimeMs
-      const wantAds = Boolean(sizeTimeEqual && checkAds)
-      const wantHash = hashContent && sizeTimeEqual
+      const sizesMatch = rightOk && item.leftEnt.size === item.rightEnt!.size
+      const timesMatch = rightOk && item.leftEnt.mtimeMs === item.rightEnt!.mtimeMs
+      const sizeTimeEqual = sizesMatch && timesMatch
+      const needAdsForTouchTime =
+        job.behavior.touchTimeWhenSizeMatches && sizesMatch && !timesMatch && checkAds
+      const wantAds = Boolean((sizeTimeEqual || needAdsForTouchTime) && checkAds)
 
-      const leftRec = wantHash
-        ? await toRecordHashed(item.relPath, item.leftAbs, item.leftEnt, wantAds, job, checkAds)
-        : toRecord(item.relPath, item.leftAbs, item.leftEnt, wantAds)
+      const leftRec = toRecord(item.relPath, item.leftAbs, item.leftEnt, wantAds)
       const rightRec = rightOk
-        ? wantHash
-          ? await toRecordHashed(
-              item.relPath,
-              item.rightAbs,
-              item.rightEnt!,
-              wantAds,
-              job,
-              checkAds,
-            )
-          : toRecord(item.relPath, item.rightAbs, item.rightEnt!, wantAds)
+        ? toRecord(item.relPath, item.rightAbs, item.rightEnt!, wantAds)
         : undefined
       const row = diffRow(item.relPath, leftRec, rightRec)
       if (row) await options.onDiff(row)
@@ -259,25 +243,6 @@ async function walkPair(options: WalkOptions): Promise<number> {
       if (await seenByRealpath(leftDir)) return
     } else if (seenByPath(leftDir)) {
       return
-    }
-
-    if (
-      checkAds &&
-      job.compare.fastFolderCompare &&
-      job.ads.writeCacheToAds &&
-      process.platform === 'win32'
-    ) {
-      const [leftStats, rightStats] = await Promise.all([
-        readFolderStats(leftDir, job.ads.cacheStreamNames.folderStats),
-        readFolderStats(rightDir, job.ads.cacheStreamNames.folderStats),
-      ])
-      if (
-        leftStats.ok &&
-        rightStats.ok &&
-        canSkipSubtree(leftStats.value, rightStats.value, job.ads.cacheStreamNames.folderStats)
-      ) {
-        return
-      }
     }
 
     const leftEntries = await readDirectory(leftDir, options.listingCache)
@@ -380,7 +345,6 @@ function slimSide(side?: SideSummary): SideSummary | undefined {
     size: side.size,
     mtimeMs: side.mtimeMs,
     isDir: side.isDir,
-    primaryHash: side.primaryHash,
     adsManifest: [],
   }
 }
@@ -464,64 +428,3 @@ function toRecord(
   }
 }
 
-async function toRecordHashed(
-  relPath: string,
-  absPath: string,
-  meta: DirEntry,
-  wantAds: boolean,
-  job: JobFile,
-  useAdsCache: boolean,
-): Promise<SideRecord> {
-  const record = toRecord(relPath, absPath, meta, wantAds)
-  try {
-    record.primaryHash = await resolveFileHash(
-      absPath,
-      meta.size,
-      meta.mtimeMs,
-      meta.atimeMs,
-      job,
-      useAdsCache,
-    )
-  } catch {
-    record.primaryHash = undefined
-  }
-  return record
-}
-
-async function resolveFileHash(
-  absPath: string,
-  size: number,
-  mtimeMs: number,
-  atimeMs: number,
-  job: JobFile,
-  useAdsCache: boolean,
-): Promise<string> {
-  const algorithm: 'md5' | 'sha256' = job.compare.contentHash === 'sha256' ? 'sha256' : 'md5'
-  if (useAdsCache && job.compare.useAdsCache && process.platform === 'win32') {
-    const cached = await readFileHashCache(absPath, job.ads.cacheStreamNames.fileHash, size, mtimeMs)
-    if (cached.ok && cached.value) return cached.value
-  }
-
-  const hash = await hashFileStreaming(absPath, algorithm)
-
-  if (useAdsCache && job.ads.writeCacheToAds && process.platform === 'win32') {
-    await writeFileHashCache(
-      absPath,
-      job.ads.cacheStreamNames.fileHash,
-      { hash, size, mtimeMs },
-      atimeMs,
-    )
-  }
-
-  return hash
-}
-
-function hashFileStreaming(filePath: string, algorithm: 'md5' | 'sha256'): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const hash = createHash(algorithm)
-    const stream = fs.createReadStream(filePath)
-    stream.on('data', (chunk) => hash.update(chunk))
-    stream.on('error', reject)
-    stream.on('end', () => resolve(hash.digest('hex')))
-  })
-}

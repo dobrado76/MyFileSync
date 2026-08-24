@@ -53,7 +53,7 @@ describe('importFfs', () => {
     const { job } = result.value
     expect(job.name).toBe('SyncSettings_AI_F_Z')
     expect(job.variant).toBe('mirror')
-    expect(job.compare.method).toBe('sizeAndTime')
+    expect(job.compare.useUsnJournal).toBe(true)
     expect(job.delete.useRecycleBin).toBe(true)
     expect(job.pairs).toHaveLength(2)
     expect(job.pairs[0]?.left).toBe('F:\\Sites')

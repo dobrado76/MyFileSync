@@ -1,3 +1,12 @@
+export type PairRootSide = 'source' | 'target'
+
+export type PairRootMissingReason = 'drive' | 'missing' | 'not-folder' | 'denied'
+
+export type MissingPairRoot = {
+  side: PairRootSide
+  path: string
+}
+
 /** Drive root like `U:\` for a local Windows path, otherwise null. */
 export function volumeRootForLocalPath(absPath: string): string | null {
   const match = /^([A-Za-z]:)([\\/]|$)/.exec(absPath.trim())
@@ -5,16 +14,50 @@ export function volumeRootForLocalPath(absPath: string): string | null {
   return `${match[1].toUpperCase()}\\`
 }
 
+/** UNC share root `\\server\share` for a network path, otherwise null. */
+export function uncShareRoot(absPath: string): string | null {
+  let trimmed = absPath.trim()
+  if (trimmed.startsWith('\\\\?\\UNC\\')) trimmed = `\\\\${trimmed.slice(8)}`
+  if (trimmed.startsWith('\\\\?\\')) return null
+  if (!trimmed.startsWith('\\\\')) return null
+  const parts = trimmed.split('\\').filter(Boolean)
+  if (parts.length < 2) return null
+  return `\\\\${parts[0]}\\${parts[1]}`
+}
+
+export function pairRootSideLabel(side: PairRootSide): 'Source' | 'Target' {
+  return side === 'source' ? 'Source' : 'Target'
+}
+
 export function missingRootMessage(
   side: 'Source' | 'Target',
   absPath: string,
-  reason: 'drive' | 'folder' | 'not-folder' | 'denied',
+  reason: PairRootMissingReason,
 ): { message: string; hint: string } {
   const drive = volumeRootForLocalPath(absPath)
-  if (reason === 'drive' && drive) {
+  if (reason === 'drive') {
+    if (drive) {
+      return {
+        message: `${side} drive ${drive.slice(0, 2)} is not connected.`,
+        hint: `Connect or map the drive, then try again. Path: ${absPath}`,
+      }
+    }
+    const share = uncShareRoot(absPath)
+    if (share) {
+      return {
+        message: `${side} network folder is not connected or not reachable.`,
+        hint: `Connect to ${share}, then try again. Path: ${absPath}`,
+      }
+    }
     return {
-      message: `${side} drive ${drive.slice(0, 2)} is not connected.`,
-      hint: `Connect or map the drive, then Compare again. Folder: ${absPath}`,
+      message: `${side} folder is not reachable.`,
+      hint: absPath,
+    }
+  }
+  if (reason === 'missing') {
+    return {
+      message: `${side} folder does not exist yet.`,
+      hint: absPath,
     }
   }
   if (reason === 'not-folder') {
@@ -31,8 +74,6 @@ export function missingRootMessage(
   }
   return {
     message: `${side} folder is not available.`,
-    hint: drive
-      ? `The folder does not exist, or ${drive.slice(0, 2)} is offline. Path: ${absPath}`
-      : `The folder does not exist or is not reachable. Path: ${absPath}`,
+    hint: absPath,
   }
 }

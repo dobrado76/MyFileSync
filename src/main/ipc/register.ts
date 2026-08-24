@@ -25,6 +25,8 @@ import {
   showItemInFolderRequestSchema,
   openPathRequestSchema,
   clearReadOnlyRequestSchema,
+  pairRootsCheckRequestSchema,
+  pairRootsCreateRequestSchema,
   settingsSetRequestSchema,
   settingsPathRequestSchema,
   syncCancelRequestSchema,
@@ -54,6 +56,7 @@ import {
   setRowIncluded,
 } from '../compare/run'
 import { cancelSyncRun, executeSync, getSyncRun } from '../sync/execute'
+import { checkEnabledPairRoots, createPairRootFolders } from '../compare/pairRoots'
 import { clearReadOnly } from '../win32/attrs'
 import { startWatch, stopWatch, startWatchForEnabledJobs } from '../watch/realtime'
 
@@ -214,6 +217,14 @@ export function registerIpc(appVersion: string): void {
   handle(IPC_CHANNELS.PATH_CLEAR_READ_ONLY, clearReadOnlyRequestSchema, async (req) => {
     const filePath = requireAbsolute(req.path)
     return clearReadOnly(filePath)
+  })
+  handle(IPC_CHANNELS.PAIR_ROOTS_CHECK, pairRootsCheckRequestSchema, async (req) =>
+    checkEnabledPairRoots(req.job),
+  )
+  handle(IPC_CHANNELS.PAIR_ROOTS_CREATE, pairRootsCreateRequestSchema, async (req) => {
+    const result = await createPairRootFolders(req.folders)
+    if (!result.ok) return result
+    return ok({ ok: true as const })
   })
 
   handleEmpty(IPC_CHANNELS.JOB_LIST, async () => ok({ jobs: await listJobs() }))

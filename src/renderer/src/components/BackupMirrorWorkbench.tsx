@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type PointerEvent } from 'react'
+import { useCallback, useRef, useState, type PointerEvent, type ReactNode } from 'react'
 import type { JobFile } from '@shared/schemas/job'
 import type { CompareFilter, CompareRow, CompareStats, FolderTreeNode } from '@shared/schemas/compare'
 import { displayTreePath, pairLabelFromLeftPath, type PairTreeLabel } from '@shared/compare/folderTree'
@@ -13,6 +13,9 @@ export type MainTab = 'options' | 'compare' | 'filters' | 'log'
 
 const PAIR_LIST_MIN = 40
 const PAIR_SPLIT_RESERVE = 220
+const PROGRESS_PANEL_MIN = 200
+const PROGRESS_PANEL_DEFAULT = 300
+const COMPARE_AREA_MIN = 360
 
 type BackupMirrorWorkbenchProps = {
   activeJob: JobFile | null
@@ -63,6 +66,9 @@ type BackupMirrorWorkbenchProps = {
   onPairIndexChange: (index: number) => void
   syncFailedRowIds: string[]
   hasSyncErrors: boolean
+  progressSidebar?: ReactNode
+  progressPanelWidth: number
+  onProgressPanelWidth: (width: number, persist?: boolean) => void
 }
 
 export function BackupMirrorWorkbench(props: BackupMirrorWorkbenchProps) {
@@ -115,6 +121,9 @@ export function BackupMirrorWorkbench(props: BackupMirrorWorkbenchProps) {
     onPairIndexChange,
     syncFailedRowIds,
     hasSyncErrors,
+    progressSidebar,
+    progressPanelWidth,
+    onProgressPanelWidth,
   } = props
 
   const enabledPairs = activeJob?.pairs.filter((p) => p.enabled) ?? []
@@ -151,6 +160,11 @@ export function BackupMirrorWorkbench(props: BackupMirrorWorkbenchProps) {
   const [dragPairListHeight, setDragPairListHeight] = useState<number | null>(null)
   const [pairSplitDragging, setPairSplitDragging] = useState(false)
   const pairListHeight = dragPairListHeight ?? activeJob?.ui?.pairListHeight ?? null
+  const compareProgressRef = useRef<HTMLDivElement>(null)
+  const dragProgressWidthRef = useRef<number | null>(null)
+  const [dragProgressWidth, setDragProgressWidth] = useState<number | null>(null)
+  const [progressSplitDragging, setProgressSplitDragging] = useState(false)
+  const progressWidth = dragProgressWidth ?? progressPanelWidth ?? PROGRESS_PANEL_DEFAULT
 
   const onPairSplitPointerDown = useCallback(
     (event: PointerEvent<HTMLDivElement>) => {
@@ -187,6 +201,45 @@ export function BackupMirrorWorkbench(props: BackupMirrorWorkbenchProps) {
       target.addEventListener('pointercancel', onUp)
     },
     [onSetPairListHeight],
+  )
+
+  const onProgressSplitPointerDown = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      event.preventDefault()
+      const container = compareProgressRef.current
+      if (!container) return
+      const startX = event.clientX
+      const startWidth = progressWidth
+      const max = Math.max(PROGRESS_PANEL_MIN, container.clientWidth - COMPARE_AREA_MIN)
+      const target = event.currentTarget
+      target.setPointerCapture(event.pointerId)
+      dragProgressWidthRef.current = startWidth
+      setProgressSplitDragging(true)
+      setDragProgressWidth(startWidth)
+
+      const onMove = (move: globalThis.PointerEvent) => {
+        const next = Math.min(
+          max,
+          Math.max(PROGRESS_PANEL_MIN, startWidth + (startX - move.clientX)),
+        )
+        dragProgressWidthRef.current = next
+        setDragProgressWidth(next)
+      }
+      const onUp = () => {
+        setProgressSplitDragging(false)
+        target.removeEventListener('pointermove', onMove)
+        target.removeEventListener('pointerup', onUp)
+        target.removeEventListener('pointercancel', onUp)
+        const width = dragProgressWidthRef.current
+        dragProgressWidthRef.current = null
+        setDragProgressWidth(null)
+        if (width != null) onProgressPanelWidth(width, true)
+      }
+      target.addEventListener('pointermove', onMove)
+      target.addEventListener('pointerup', onUp)
+      target.addEventListener('pointercancel', onUp)
+    },
+    [onProgressPanelWidth, progressWidth],
   )
 
   return (
@@ -338,33 +391,6 @@ export function BackupMirrorWorkbench(props: BackupMirrorWorkbenchProps) {
                       <option value="update">Update</option>
                       <option value="automatic">Auto</option>
                       <option value="twoWay">Two-way</option>
-                    </select>
-                    <select
-                      className="bm-control bm-compare-select"
-                      disabled={configLocked}
-                      value={
-                        activeJob.compare.method === 'content'
-                          ? `content:${activeJob.compare.contentHash}`
-                          : 'sizeAndTime'
-                      }
-                      onChange={(e) => {
-                        const value = e.target.value
-                        if (value === 'sizeAndTime') {
-                          onChangeJob({
-                            compare: { ...activeJob.compare, method: 'sizeAndTime', contentHash: 'md5' },
-                          })
-                          return
-                        }
-                        const hash = value === 'content:sha256' ? 'sha256' : 'md5'
-                        onChangeJob({
-                          compare: { ...activeJob.compare, method: 'content', contentHash: hash },
-                        })
-                      }}
-                      title="How files are compared. Size + date/time is fast. MD5/SHA-256 hashes file contents."
-                    >
-                      <option value="sizeAndTime">Size + date/time</option>
-                      <option value="content:md5">MD5 content</option>
-                      <option value="content:sha256">SHA-256 content</option>
                     </select>
                     </div>
                     <span className="bm-label">Target folder</span>
@@ -530,36 +556,59 @@ export function BackupMirrorWorkbench(props: BackupMirrorWorkbenchProps) {
                   onPointerDown={onPairSplitPointerDown}
                 />
 
-                <CompareGrid
-                  rows={compareRows}
-                  rowOffset={compareRowOffset}
-                  rowTotal={compareRowTotal}
-                  filter={compareFilter}
-                  busy={compareBusy || syncBusy}
-                  folderTree={compareFolderTree}
-                  compareRunId={compareRunId}
-                  pathPrefix={comparePathPrefix}
-                  pathPrefixLabel={comparePathLabel}
-                  rootLabel={treeRootLabel}
-                  pairSourcePaths={pairSourcePaths}
-                  pairRoots={pairRoots}
-                  syncFailedRowIds={syncFailedRowIds}
-                  hasSyncErrors={hasSyncErrors}
-                  onFilterChange={onFilterChange}
-                  onSelectFolder={onSelectFolder}
-                  onRowsWindowChange={onRowsWindowChange}
-                  onFolderAction={onFolderAction}
-                  onOpenPath={onOpenPath}
-                  onRevealPath={onRevealPath}
-                  onToggleIncluded={onToggleIncluded}
-                  onSelectRow={onSelectRow}
-                  onRowDoubleClick={onSelectRow}
-                  selectedRowId={selectedRow?.id ?? null}
-                />
+                <div
+                  className={`bm-compare-progress-split${progressSplitDragging ? ' bm-compare-progress-split-dragging' : ''}`}
+                  ref={compareProgressRef}
+                >
+                  <div className="bm-compare-main">
+                    <CompareGrid
+                      rows={compareRows}
+                      rowOffset={compareRowOffset}
+                      rowTotal={compareRowTotal}
+                      filter={compareFilter}
+                      busy={compareBusy || syncBusy}
+                      folderTree={compareFolderTree}
+                      compareRunId={compareRunId}
+                      pathPrefix={comparePathPrefix}
+                      pathPrefixLabel={comparePathLabel}
+                      rootLabel={treeRootLabel}
+                      pairSourcePaths={pairSourcePaths}
+                      pairRoots={pairRoots}
+                      syncFailedRowIds={syncFailedRowIds}
+                      hasSyncErrors={hasSyncErrors}
+                      onFilterChange={onFilterChange}
+                      onSelectFolder={onSelectFolder}
+                      onRowsWindowChange={onRowsWindowChange}
+                      onFolderAction={onFolderAction}
+                      onOpenPath={onOpenPath}
+                      onRevealPath={onRevealPath}
+                      onToggleIncluded={onToggleIncluded}
+                      onSelectRow={onSelectRow}
+                      onRowDoubleClick={onSelectRow}
+                      selectedRowId={selectedRow?.id ?? null}
+                    />
 
-                {selectedRow ? (
-                  <RowDetailPanel row={selectedRow} onClose={() => onSelectRow(null)} />
-                ) : null}
+                    {selectedRow ? (
+                      <RowDetailPanel row={selectedRow} onClose={() => onSelectRow(null)} />
+                    ) : null}
+                  </div>
+
+                  {progressSidebar ? (
+                    <>
+                      <div
+                        className="compare-split-gutter bm-progress-split-gutter"
+                        role="separator"
+                        aria-orientation="vertical"
+                        aria-label="Resize progress panel"
+                        title="Drag to show more or less of the file list"
+                        onPointerDown={onProgressSplitPointerDown}
+                      />
+                      <div className="bm-progress-pane" style={{ width: progressWidth }}>
+                        {progressSidebar}
+                      </div>
+                    </>
+                  ) : null}
+                </div>
 
                 <div className="bm-run-bar">
                   <button

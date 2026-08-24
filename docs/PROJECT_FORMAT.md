@@ -36,21 +36,11 @@ userData/
   ],
   "variant": "mirror",
   "compare": {
-    "method": "sizeAndTime",
-    "contentHash": "md5",
-    "hashWhenSizeOrTimeDiffers": true,
-    "useAdsCache": true,
-    "fastFolderCompare": false,
     "useUsnJournal": true
   },
   "ads": {
     "syncAllStreams": true,
-    "excludeStreams": ["Zone.Identifier"],
-    "writeCacheToAds": true,
-    "cacheStreamNames": {
-      "fileHash": "MD5",
-      "folderStats": ["FileCount", "FolderCount", "FileTotCount", "FolderTotCount", "FileSize", "FolderSize"]
-    }
+    "excludeStreams": ["Zone.Identifier", "MD5"]
   },
   "filters": {
     "include": [],
@@ -64,7 +54,8 @@ userData/
     "enabled": false
   },
   "behavior": {
-    "verifyAfterCopy": false
+    "archiveFlagScanOnly": false,
+    "touchTimeWhenSizeMatches": false
   },
   "parallelism": {
     "compareWorkers": 4,
@@ -84,10 +75,9 @@ userData/
 | `pairs[].ads` | boolean | Default true. Off skips ADS compare and extra stream copy for that pair. |
 | `ui.pairListHeight` | number (px) | Folder-pair list splitter height. Written when you release the splitter. |
 | `variant` | `mirror` \| `update` \| `twoWay` \| `automatic` | `twoWay` uses the sync DB |
-| `compare.method` | `sizeAndTime` \| `content` | Content uses `contentHash` |
-| `compare.contentHash` | `md5` \| `sha256` \| `none` | |
+| `compare.useUsnJournal` | boolean | Default true — skip unchanged folders via NTFS journal |
+| `behavior.touchTimeWhenSizeMatches` | boolean | SetFileTime when size + ADS match but mtime differs |
 | `ads.syncAllStreams` | boolean | Default true NTFS→NTFS |
-| `ads.writeCacheToAds` | boolean | BackupMirror-style MD5/folder stats on files |
 | `filters.include` | glob[] | Empty = all (then exclude applied). Gitignore-style, relative to each pair root. |
 | `filters.exclude` | glob[] | `!Thumbnails` any depth; `/!Thumbnails` or `dir/name` this instance only. |
 
@@ -127,7 +117,7 @@ Field mapping for old `optionsBackup.ini` files: [BACKUPMIRROR_MIGRATION.md](BAC
 | FFS | MyFileSync |
 |-----|------------|
 | Folder pairs | `pairs[]` |
-| TimeAndSize / Content | `compare.method` sizeAndTime / content (MD5) |
+| TimeAndSize / Content | size + date/time (content hash not supported) |
 | Mirror / Update / Two-way (or Changes matrix) | `variant` |
 | RecycleBin deletion policy | `delete.useRecycleBin` |
 | Exclude `\folder\` and `*\name` | gitignore `/folder` and `name` |

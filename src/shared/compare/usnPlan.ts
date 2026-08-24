@@ -98,9 +98,6 @@ export function normalizeUsnRootPath(p: string): string {
 
 const USN_FILTER_LABELS = [
   'variant',
-  'compare method',
-  'content hash',
-  'hash when size/time differs',
   'sync all ADS streams',
   'excluded ADS streams',
   'include filters',
@@ -111,9 +108,6 @@ const USN_FILTER_LABELS = [
 export function compareUsnFilterKeyParts(job: JobFile): string[] {
   return [
     job.variant,
-    job.compare.method,
-    job.compare.contentHash,
-    String(job.compare.hashWhenSizeOrTimeDiffers ? 1 : 0),
     String(job.ads.syncAllStreams ? 1 : 0),
     [...job.ads.excludeStreams].sort().join(','),
     [...job.filters.include].sort().join(','),
@@ -239,7 +233,7 @@ export function usnSkipReasonLabel(reason: UsnSkipReason, detail?: string): stri
     case 'too_many_changes':
       return 'too many file changes since last Compare'
     case 'unresolved_paths':
-      return 'change journal paths could not be resolved'
+      return detail ?? 'change journal paths could not be resolved'
     case 'journal_read_failed':
       return detail ? `could not read change journal (${detail})` : 'could not read change journal'
   }

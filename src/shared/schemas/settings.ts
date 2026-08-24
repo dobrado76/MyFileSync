@@ -11,6 +11,8 @@ export const settingsSchema = z.object({
   confirmMirrorDeletes: z.boolean().default(true),
   /** Full progress panel vs status-bar string. Remembers the last choice. */
   progressUiExpanded: z.boolean().default(true),
+  /** Width of the compare-tab progress sidebar in pixels. */
+  progressPanelWidth: z.number().int().min(180).max(1200).default(300),
 })
 
 export type Settings = z.infer<typeof settingsSchema>
@@ -20,4 +22,5 @@ export const DEFAULT_SETTINGS: Settings = {
   hardwareAcceleration: true,
   confirmMirrorDeletes: true,
   progressUiExpanded: true,
+  progressPanelWidth: 300,
 }

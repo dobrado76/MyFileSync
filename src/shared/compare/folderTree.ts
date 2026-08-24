@@ -104,7 +104,7 @@ function emptyNode(path: string, name: string): FolderTreeNode {
 function accountAction(node: FolderTreeNode, action: CompareRow['action']): void {
   node.count++
   if (action === 'Create') node.creates++
-  else if (action === 'Update' || action === 'UpdateStreamsOnly') node.updates++
+  else if (action === 'Update' || action === 'UpdateStreamsOnly' || action === 'TouchTime') node.updates++
   else if (action === 'Delete') node.deletes++
   else if (action === 'Move' || action === 'Rename') node.moves++
 }

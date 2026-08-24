@@ -8,7 +8,7 @@ Most sync tools copy the file body only. Alternate streams — Mark-of-the-Web, 
 
 - **Jobs** with one or more folder pairs (source / target). Tick which pairs run Compare and Sync. Import and export FreeFileSync `.ffs_gui` / `.ffs_batch` files.
 - **Variants:** Mirror, Update, Automatic, Two-way
-- **Compare** by size + date/time, or MD5 / SHA-256 content hash. On NTFS, later Compares can skip unchanged folders using the change journal.
+- **Compare** by size + date/time and alternate data streams. On NTFS, later Compares can skip unchanged folders using the change journal.
 - **ADS manifests** always listed and compared (name + size), even when `$DATA` matches
 - **Filters** — gitignore-style patterns (`!Thumbnails`, `*.tmp`) or a single relative path
 - **Sync** with Recycle Bin deletes (default), confirm when mirror would delete

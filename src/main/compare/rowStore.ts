@@ -5,6 +5,7 @@ import {
   accountDiff,
   accountEquals,
   categoryMatchesFilter,
+  unaccountDiff,
 } from '@shared/compare/classify'
 import {
   createEmptyStats,
@@ -63,6 +64,8 @@ export class CompareRowStore {
   private bytes = 0
   private includedOverrides = new Map<string, boolean>()
   private syncErrorIds = new Set<string>()
+  /** Rows removed after sync (or drop) without rewriting the whole JSONL file. */
+  private droppedIds = new Set<string>()
   private stats: CompareStats = createEmptyStats()
   private extraEqual = 0
   private fh: fs.promises.FileHandle | null = null
@@ -117,6 +120,7 @@ export class CompareRowStore {
   listSlimPaths(): Array<{ pairId: string; relPath: string; fromRelPath: string }> {
     const out: Array<{ pairId: string; relPath: string; fromRelPath: string }> = []
     for (let i = 0; i < this.count; i++) {
+      if (this.droppedIds.has(String(i))) continue
       out.push({
         pairId: this.pairIds[i] ?? '',
         relPath: this.relPaths[i] ?? '',
@@ -143,6 +147,7 @@ export class CompareRowStore {
   }
 
   setIncluded(rowId: string, included: boolean): boolean {
+    if (this.droppedIds.has(rowId)) return false
     const index = Number(rowId)
     if (!Number.isInteger(index) || index < 0 || index >= this.count) return false
     const currently = this.includedOverrides.get(rowId) ?? this.includedBits[index] === 1
@@ -177,6 +182,7 @@ export class CompareRowStore {
     const rows: CompareRow[] = []
     let total = 0
     for (let i = 0; i < this.count; i++) {
+      if (this.droppedIds.has(String(i))) continue
       if (!this.matches(i, filter)) continue
       if (pathPrefix && !this.slimMatchesPrefix(i, pathPrefix, multiPair)) continue
       if (total >= offset && rows.length < limit) {
@@ -191,6 +197,7 @@ export class CompareRowStore {
   async getFolderTree(filter: CompareFilter, pairLabels?: PairTreeLabel[]): Promise<FolderTreeNode> {
     const builder = createFolderTreeBuilder(pairLabels)
     for (let i = 0; i < this.count; i++) {
+      if (this.droppedIds.has(String(i))) continue
       if (!this.matches(i, filter)) continue
       builder.add({
         pairId: this.pairIds[i] ?? '',
@@ -206,6 +213,7 @@ export class CompareRowStore {
   }
 
   async getRow(rowId: string): Promise<CompareRow | undefined> {
+    if (this.droppedIds.has(rowId)) return undefined
     const index = Number(rowId)
     if (!Number.isInteger(index) || index < 0 || index >= this.count) return undefined
     return this.readIndex(index)
@@ -237,6 +245,12 @@ export class CompareRowStore {
 
   async applyReplacements(dropIds: Set<string>, replacements: Map<string, CompareRow>): Promise<void> {
     if (dropIds.size === 0 && replacements.size === 0) return
+
+    if (replacements.size === 0) {
+      await this.dropRowsFast(dropIds)
+      return
+    }
+
     if (!this.fh) throw new Error('Compare store is not readable.')
 
     const tmpPath = `${this.filePath}.tmp`
@@ -317,7 +331,26 @@ export class CompareRowStore {
     this.count = count
     this.bytes = bytes
     this.stats = stats
+    this.droppedIds.clear()
     this.fh = await fsp.open(this.filePath, 'r')
+  }
+
+  private async dropRowsFast(dropIds: Set<string>): Promise<void> {
+    if (!this.fh) await this.close()
+    let n = 0
+    for (const id of dropIds) {
+      if (this.droppedIds.has(id)) continue
+      const index = Number(id)
+      if (!Number.isInteger(index) || index < 0 || index >= this.count) continue
+      const row = await this.readIndex(index)
+      if (!row) continue
+      this.droppedIds.add(id)
+      this.syncErrorIds.delete(id)
+      this.includedOverrides.delete(id)
+      unaccountDiff(this.stats, row)
+      n++
+      if (n % 512 === 0) await yieldToEventLoop()
+    }
   }
 
   async dispose(): Promise<void> {
@@ -346,6 +379,7 @@ export class CompareRowStore {
   }
 
   private async readIndex(index: number): Promise<CompareRow | undefined> {
+    if (this.droppedIds.has(String(index))) return undefined
     if (!this.fh) return undefined
     const start = this.offsets[index]
     if (start === undefined) return undefined

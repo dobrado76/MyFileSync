@@ -38,65 +38,70 @@ async function tryIncremental(
   pair: JobPair,
   saved: PersistedUsnPair,
 ): Promise<IncrementalTry> {
-  const [leftDirty, rightDirty] = await Promise.all([
-    readUsnDirtyRelPaths(pair.left, saved.left.nextUsn, saved.left.journalId),
-    readUsnDirtyRelPaths(pair.right, saved.right.nextUsn, saved.right.journalId),
-  ])
-  if (!leftDirty.ok) {
-    return {
-      ok: false,
-      reason: classifyUsnReadError(leftDirty.error.message),
-      detail: leftDirty.error.message,
+  try {
+    const [leftDirty, rightDirty] = await Promise.all([
+      readUsnDirtyRelPaths(pair.left, saved.left.nextUsn, saved.left.journalId),
+      readUsnDirtyRelPaths(pair.right, saved.right.nextUsn, saved.right.journalId),
+    ])
+    if (!leftDirty.ok) {
+      return {
+        ok: false,
+        reason: classifyUsnReadError(leftDirty.error.message),
+        detail: leftDirty.error.message,
+      }
     }
-  }
-  if (!rightDirty.ok) {
-    return {
-      ok: false,
-      reason: classifyUsnReadError(rightDirty.error.message),
-      detail: rightDirty.error.message,
+    if (!rightDirty.ok) {
+      return {
+        ok: false,
+        reason: classifyUsnReadError(rightDirty.error.message),
+        detail: rightDirty.error.message,
+      }
     }
-  }
-  if (!journalCursorValid(saved.left, leftDirty.value.live)) {
-    return {
-      ok: false,
-      reason: 'cursor_stale',
-      detail: `left: ${describeJournalCursorInvalid(saved.left, leftDirty.value.live) ?? 'cursor invalid'}`,
+    if (!journalCursorValid(saved.left, leftDirty.value.live)) {
+      return {
+        ok: false,
+        reason: 'cursor_stale',
+        detail: `left: ${describeJournalCursorInvalid(saved.left, leftDirty.value.live) ?? 'cursor invalid'}`,
+      }
     }
-  }
-  if (!journalCursorValid(saved.right, rightDirty.value.live)) {
-    return {
-      ok: false,
-      reason: 'cursor_stale',
-      detail: `right: ${describeJournalCursorInvalid(saved.right, rightDirty.value.live) ?? 'cursor invalid'}`,
+    if (!journalCursorValid(saved.right, rightDirty.value.live)) {
+      return {
+        ok: false,
+        reason: 'cursor_stale',
+        detail: `right: ${describeJournalCursorInvalid(saved.right, rightDirty.value.live) ?? 'cursor invalid'}`,
+      }
     }
-  }
 
-  const dirty = buildDirtyPrefixSet([
-    ...leftDirty.value.relPaths,
-    ...rightDirty.value.relPaths,
-    ...saved.outstanding,
-  ])
-  return {
-    ok: true,
-    plan: {
-      usedJournal: true,
-      skipSubtree: (relDir) => shouldSkipUsnSubtree(relDir, dirty),
-      cursors: {
-        left: {
-          volumeRoot: leftDirty.value.volumeRoot,
-          journalId: leftDirty.value.live.journalId,
-          nextUsn: leftDirty.value.consumedNextUsn,
-          volumeSerial: leftDirty.value.live.volumeSerial,
+    const dirty = buildDirtyPrefixSet([
+      ...leftDirty.value.relPaths,
+      ...rightDirty.value.relPaths,
+      ...saved.outstanding,
+    ])
+    return {
+      ok: true,
+      plan: {
+        usedJournal: true,
+        skipSubtree: (relDir) => shouldSkipUsnSubtree(relDir, dirty),
+        cursors: {
+          left: {
+            volumeRoot: leftDirty.value.volumeRoot,
+            journalId: leftDirty.value.live.journalId,
+            nextUsn: leftDirty.value.consumedNextUsn,
+            volumeSerial: leftDirty.value.live.volumeSerial,
+          },
+          right: {
+            volumeRoot: rightDirty.value.volumeRoot,
+            journalId: rightDirty.value.live.journalId,
+            nextUsn: rightDirty.value.consumedNextUsn,
+            volumeSerial: rightDirty.value.live.volumeSerial,
+          },
+          outstanding: saved.outstanding,
         },
-        right: {
-          volumeRoot: rightDirty.value.volumeRoot,
-          journalId: rightDirty.value.live.journalId,
-          nextUsn: rightDirty.value.consumedNextUsn,
-          volumeSerial: rightDirty.value.live.volumeSerial,
-        },
-        outstanding: saved.outstanding,
       },
-    },
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    return { ok: false, reason: 'journal_read_failed', detail: message }
   }
 }
 

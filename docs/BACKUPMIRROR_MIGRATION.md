@@ -15,7 +15,7 @@ MyFileSync jobs are JSON. The workbench does **not** import INI. This page is a 
 | `AutoExpand` | `True` | Ignored — the results tree always starts with only the root expanded |
 | `UseVolumeShadowCopy` | `True` | `vss.enabled` (stub; not in the UI) |
 | `AutoBackup` | `False` | Ignored — Compare never auto-syncs |
-| `FastCompare` | `True` | `compare.fastFolderCompare` (no UI; only applies with ADS folder-stat cache) |
+| `FastCompare` | `True` | Ignored (fast folder ADS compare removed) |
 | `UseArchiveFlag` | `False` | `behavior.archiveFlagScanOnly` (no UI) |
 | `PosX`, `PosY`, `Width`, `Height` | integers | `window-state.json` (not in job JSON) |
 | `LastFolder` | path | `settings.lastBrowsePath` |
@@ -56,8 +56,8 @@ Importer sets sensible defaults for fields BackupMirror had implicitly:
 
 ```json
 {
-  "compare": { "method": "sizeAndTime", "contentHash": "md5", "useAdsCache": true, "fastFolderCompare": true },
-  "ads": { "syncAllStreams": true, "excludeStreams": [], "writeCacheToAds": true },
+  "compare": { "useUsnJournal": true },
+  "ads": { "syncAllStreams": true, "excludeStreams": ["Zone.Identifier", "MD5"] },
   "delete": { "useRecycleBin": false }
 }
 ```
@@ -69,10 +69,10 @@ Importer sets sensible defaults for fields BackupMirror had implicitly:
 | BackupMirror | MyFileSync |
 |--------------|------------|
 | WinForms action tree | Folder tree + two-pane change list + detail panel |
-| `GetFiles` / `GetFilesFast` | `compare/getFiles.ts` + fast folder ADS |
+| `GetFiles` / `GetFilesFast` | `compare/getFiles.ts` (size + time; USN skip) |
 | `CloneFile` / `CloneDirectory` | `sync/copy.ts` + `ads/copyStreams.ts` |
-| MD5 in ADS stream | `ads.writeCacheToAds` + stream name `MD5` |
-| Folder stats ADS | Same stream names as optional cache |
+| MD5 in ADS stream | Ignored via default `excludeStreams` (`MD5`) |
+| Folder stats ADS | Ignored (no fast-folder compare) |
 | Hard link siblings | `sync/hardlink.ts` |
 | Volume Shadow Copy | `vss.enabled` (stub / hint) |
 | Single-threaded + `DoEvents` | Sequential paired walk + event-loop yield |

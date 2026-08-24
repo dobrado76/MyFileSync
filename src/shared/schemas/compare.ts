@@ -15,6 +15,7 @@ export type SyncActionType =
   | 'Create'
   | 'Update'
   | 'UpdateStreamsOnly'
+  | 'TouchTime'
   | 'Delete'
   | 'Move'
   | 'Rename'
@@ -27,7 +28,6 @@ export type SideRecord = {
   isDir: boolean
   dataSize: number
   mtimeMs: number
-  primaryHash?: string
   adsManifest: AdsManifest
 }
 
@@ -35,7 +35,6 @@ export type SideSummary = {
   size: number
   mtimeMs: number
   isDir: boolean
-  primaryHash?: string
   adsManifest: AdsManifest
 }
 
@@ -110,12 +109,13 @@ export type PlannedAction = {
 }
 
 export type SyncProgress = {
-  phase: 'preparing' | 'copying' | 'deleting' | 'done' | 'cancelled'
+  phase: 'preparing' | 'copying' | 'deleting' | 'finishing' | 'done' | 'cancelled'
   done: number
   total: number
   bytesDone?: number
   bytesTotal?: number
   currentPath?: string
+  currentAction?: SyncActionType
   errors: number
 }
 

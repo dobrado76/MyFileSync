@@ -11,7 +11,7 @@
 
 ### Compare & sync
 
-- **Two-phase Compare** — enumerate for an exact item count, then classify (listings reused; ADS/hash only in pass two).
+- **Two-phase Compare** — enumerate for an exact item count, then classify (listings reused; ADS only in pass two).
 - **NTFS USN journal** (default on) — skip unchanged folders after the first completed Compare. Cursor stored in AppData per pair (shared across jobs with the same paths and filters).
 - **Parallel sync copies** — `copyPerDevice` (default 6) is honored; moves/deletes stay serial.
 - **Compare folder tree** — filter by branch, exclude folders, sync a subtree, move/rename detection.

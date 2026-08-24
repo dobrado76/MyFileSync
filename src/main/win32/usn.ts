@@ -22,7 +22,6 @@ const FSCTL_READ_USN_JOURNAL = 0x000900bb
 const FSCTL_READ_UNPRIVILEGED_USN_JOURNAL = 0x000903ab
 
 const FileIdType = 0
-const MAX_UNRESOLVED_RATIO = 0.2
 const MAX_RECORDS = 1_000_000
 
 const kernel32 = koffi.load('kernel32.dll')
@@ -241,7 +240,8 @@ function openByFileId(volumeHandle: unknown, fileId: bigint): unknown {
   const desc = Buffer.alloc(24)
   desc.writeUInt32LE(24, 0)
   desc.writeUInt32LE(FileIdType, 4)
-  desc.writeBigInt64LE(fileId, 8)
+  // NTFS file reference numbers are opaque uint64 — high bit set is normal.
+  desc.writeBigUInt64LE(fileId, 8)
   return OpenFileById(
     volumeHandle,
     desc,
@@ -331,6 +331,26 @@ export type UsnDirtyResult = {
 }
 
 /**
+ * When journal records cannot be turned into paths, incremental compare may be unsafe.
+ * Unresolvable FRNs (deleted files elsewhere on the volume) are ignored — only abort when
+ * OpenFileById failed for every record, which usually means the volume cannot be read.
+ */
+export function usnReadShouldAbort(
+  recordCount: number,
+  unresolved: number,
+  relPathCount: number,
+): string | null {
+  if (recordCount >= MAX_RECORDS) {
+    return 'Too many change-journal records; doing a full compare.'
+  }
+  const resolvedCount = recordCount - unresolved
+  if (recordCount > 0 && relPathCount === 0 && resolvedCount === 0) {
+    return 'Could not resolve any change-journal paths; doing a full compare.'
+  }
+  return null
+}
+
+/**
  * Rel paths under `pairRoot` that changed since `startUsn` (inclusive lower bound).
  * Returns an error when the journal cannot be used (caller should full-walk).
  */
@@ -342,7 +362,8 @@ export async function readUsnDirtyRelPaths(
   if (process.platform !== 'win32') {
     return ioError('The NTFS change journal is only available on Windows.')
   }
-  return withNativeLock(() => {
+  try {
+    return await withNativeLock(() => {
     const volumeRoot = volumeRootForPath(pairRoot)
     if (!volumeRoot) return ioError('Could not resolve the volume for this folder.')
     const handle = openVolumeHandle(volumeRoot)
@@ -401,9 +422,8 @@ export async function readUsnDirtyRelPaths(
       if (recordCount >= MAX_RECORDS) {
         return ioError('Too many change-journal records; doing a full compare.')
       }
-      if (recordCount > 0 && unresolved / recordCount > MAX_UNRESOLVED_RATIO) {
-        return ioError('Too many change-journal paths could not be resolved; doing a full compare.')
-      }
+      const abort = usnReadShouldAbort(recordCount, unresolved, relPaths.length)
+      if (abort) return ioError(abort)
 
       return ok({
         relPaths,
@@ -414,5 +434,9 @@ export async function readUsnDirtyRelPaths(
     } finally {
       CloseHandle(handle)
     }
-  })
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    return ioError(message)
+  }
 }

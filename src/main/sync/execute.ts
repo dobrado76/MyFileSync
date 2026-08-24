@@ -2,10 +2,16 @@ import type { BrowserWindow } from 'electron'
 import { ok } from '@shared/result'
 import { adsIgnoredStreamNames } from '@shared/compare/classify'
 import { pairComparesAds, type JobFile } from '@shared/schemas/job'
-import type { PlannedAction, SyncFailure, SyncProgress, SyncSummary } from '@shared/schemas/compare'
+import type {
+  PlannedAction,
+  SyncActionType,
+  SyncFailure,
+  SyncProgress,
+  SyncSummary,
+} from '@shared/schemas/compare'
 import { rowToPlannedAction } from '../compare/plan'
 import type { CompareRowStore } from '../compare/rowStore'
-import { copyEntry, copyStreamsOnly, createEntry, deleteEntry, moveEntry, type CopyOptions } from './copy'
+import { copyEntry, copyStreamsOnly, createEntry, deleteEntry, moveEntry, touchTimeEntry, type CopyOptions } from './copy'
 import { requestCopyAbort, clearCopyAbort, isCopyAborted } from '../win32/copy'
 import { yieldToEventLoop } from '../win32/nativeLock'
 import { resolvePairRoot, versionBeforeMutation } from './versioning'
@@ -74,8 +80,9 @@ function createSyncProgress(syncRunId: string, state: SyncRunState, emit: SyncEv
   }
 
   return {
-    note(relPath: string, phase: SyncProgress['phase']): void {
-      state.progress.currentPath = relPath
+    note(absPath: string, phase: SyncProgress['phase'], action?: SyncActionType): void {
+      state.progress.currentPath = absPath
+      state.progress.currentAction = action
       state.progress.phase = phase
       const now = Date.now()
       if (now - lastEmitAt >= PROGRESS_INTERVAL_MS) {
@@ -147,15 +154,14 @@ export async function executeSync(
   const progress = createSyncProgress(syncRunId, state, emit)
 
   const ensuredDirs = new Set<string>()
+  let activeAction: SyncActionType | undefined
   const copyOptions = (): CopyOptions => ({
     excludeStreams: ignored === 'all' ? [] : [...ignored],
     deleteExtraStreams: job.variant === 'mirror',
-    verifyAfterCopy: job.behavior.verifyAfterCopy,
-    hashAlgorithm: job.compare.contentHash === 'sha256' ? 'sha256' : 'md5',
     vssEnabled: job.vss.enabled,
     filters: job.filters,
     ensuredDirs,
-    onProgress: (current) => progress.note(current, 'copying'),
+    onProgress: (current) => progress.note(current, 'copying', activeAction),
     isCancelled: () => state.cancelled || isCopyAborted(),
   })
 
@@ -207,7 +213,8 @@ export async function executeSync(
       options.destLikelyMissing = true
     }
 
-    progress.note(syncProgressPath(action), phase)
+    activeAction = action.action
+    progress.note(syncProgressPath(action), phase, action.action)
 
     const result = await runAction(action, job, options)
     if (!result.ok && result.error.code === 'cancelled') {
@@ -259,12 +266,15 @@ export async function executeSync(
   await runWithConcurrency(copies, copyConcurrency, isCancelled, (action) => runOne(action, 'copying'))
   await runWithConcurrency(deletes, 1, isCancelled, (action) => runOne(action, 'deleting'))
 
+  progress.note('Updating compare results…', 'finishing')
   progress.flush()
 
   if (succeededIds.size > 0) {
     await store.applyReplacements(succeededIds, new Map())
   }
   if (!state.cancelled) {
+    progress.note('Saving change journal cursor…', 'finishing')
+    progress.flush()
     await persistUsnAfterSync(job, store).catch(() => undefined)
   }
 
@@ -313,6 +323,8 @@ async function runAction(action: PlannedAction, job: JobFile, copyOptions: CopyO
       }
       return copyStreamsOnly(action, copyOptions)
     }
+    case 'TouchTime':
+      return touchTimeEntry(action)
     case 'Delete': {
       if (!action.destPath) return copyEntry(action, copyOptions)
       const pairRoot = resolvePairRoot(action.pairId, action.destPath, job)

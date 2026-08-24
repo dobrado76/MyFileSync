@@ -3,6 +3,7 @@ import type { CompareRow, PlannedAction, SyncActionType } from '../schemas/compa
 const ACTION_TIER: Record<SyncActionType, number> = {
   Move: 0,
   Rename: 0,
+  TouchTime: 1,
   UpdateStreamsOnly: 1,
   Update: 2,
   Create: 3,
@@ -30,6 +31,8 @@ export function estimateWorkBytes(row: CompareRow): number {
       return 0
     case 'UpdateStreamsOnly':
       return adsStreamBytes(row)
+    case 'TouchTime':
+      return 0
     case 'Update':
     case 'Create':
       return sourceSide(row)?.size ?? 0

@@ -130,7 +130,8 @@ function enumerateTitleNote(
     return skipDetail ? `${mode} (${skipDetail})` : mode
   }
   const why = usnSkipReasonLabel(skipReason ?? 'no_cursor', skipDetail)
-  return pairPrefix ? `${pairPrefix} · full walk — ${why}` : `Full walk — ${why}`
+  const detail = skipDetail && !why.includes(skipDetail) ? `${why} (${skipDetail})` : why
+  return pairPrefix ? `${pairPrefix} · full walk — ${detail}` : `Full walk — ${detail}`
 }
 
 function pairLabelsForJob(job: JobFile): PairTreeLabel[] {

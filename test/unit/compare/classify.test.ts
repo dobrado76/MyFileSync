@@ -132,6 +132,34 @@ describe('classify', () => {
     expect(row.action).toBe('UpdateStreamsOnly')
   })
 
+  it('uses TouchTime when size and ADS match but only mtime differs', () => {
+    const touchJob = createDefaultJob('touch')
+    touchJob.behavior.touchTimeWhenSizeMatches = true
+    const left = side({ relPath: 'a.txt', mtimeMs: 1000 })
+    const right = side({ relPath: 'a.txt', mtimeMs: 2000 })
+    const row = classifyPair('pair', 'a.txt', left, right, touchJob)
+    expect(row.action).toBe('TouchTime')
+    expect(row.direction).toBe('leftToRight')
+  })
+
+  it('keeps Update when touch-time is off', () => {
+    const job = createDefaultJob('no-touch')
+    job.behavior.touchTimeWhenSizeMatches = false
+    const left = side({ relPath: 'a.txt', mtimeMs: 1000 })
+    const right = side({ relPath: 'a.txt', mtimeMs: 2000 })
+    const row = classifyPair('pair', 'a.txt', left, right, job)
+    expect(row.action).toBe('Update')
+  })
+
+  it('keeps Update when size differs even if touch-time is on', () => {
+    const touchJob = createDefaultJob('touch')
+    touchJob.behavior.touchTimeWhenSizeMatches = true
+    const left = side({ relPath: 'a.txt', dataSize: 100, mtimeMs: 1000 })
+    const right = side({ relPath: 'a.txt', dataSize: 200, mtimeMs: 2000 })
+    const row = classifyPair('pair', 'a.txt', left, right, touchJob)
+    expect(row.action).toBe('Update')
+  })
+
   it('counts equals that were not stored as rows', () => {
     const left = side({ relPath: 'a.txt' })
     const right = side({ relPath: 'b.txt', dataSize: 200 })

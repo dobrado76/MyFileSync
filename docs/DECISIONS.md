@@ -7,7 +7,7 @@ Locked product and technical decisions. Update this file when behavior changes.
 | **D1** | **Windows-only**; Electron + React + TypeScript | ADS/VSS/hard links are Win32-first |
 | **D2** | **ADS stream-level sync is core**, not an optional plugin | Differentiator vs FreeFileSync |
 | **D3** | NTFS→NTFS copy uses **`CopyFileEx`/`CopyFileW`** first; fallback **`copyStreams`** after `$DATA` | Node stream copy drops ADS on large files |
-| **D4** | **Sync DB in `userData`** (SQLite); **optional ADS compare cache on user files** per job (`MD5`, folder aggregates) | DB for two-way / moves; optional on-file cache for fast compare |
+| **D4** | **Sync DB in `userData`** (SQLite) | Two-way sync and move detection |
 | **D5** | **Job format JSON** (`format: myfilesync-job`) with export/import | Replace BackupMirror INI; versioned schema |
 | **D6** | **Recycle Bin default** for sync deletes; confirm when delete count &gt; 0, with **Don’t show again** (`settings.confirmMirrorDeletes`, default on). Permanent delete still requires confirm | Explorer-like safety; the extra prompt is skippable after you have seen it |
 | **D7** | **Standalone codebase** — no imports from other products | Clean license and dependency boundary |
@@ -33,6 +33,7 @@ Locked product and technical decisions. Update this file when behavior changes.
 | **D28** | Compare and Sync show a **progress panel** (counts, rates, graphs). A minimize control collapses it to the status-bar string; a **Progress** button expands it again. Last choice is `settings.progressUiExpanded` (default on) | A one-line status is not enough for a multi-hour run; forcing the full panel every time is also wrong |
 | **D29** | Compare (and Sync) **do not start** if an enabled local pair root is missing or its drive is offline. One error, no walk | A disconnected target must not become tens of thousands of Create rows |
 | **D30** | Compare is **two-phase**: enumerate both sides (same filters, skips, USN) for an exact item count, then classify. Directory listings are reused so the extra pass is not a second disk walk (unless the tree is huge and the listing cache is dropped). Progress `total` is that count | A live percent and remaining count need a known total; guessing while walking is misleading |
+| **D31** | **`behavior.touchTimeWhenSizeMatches`** (default off): when `$DATA` size and compared ADS already match but last-write time differs, Compare action is **TouchTime** and Sync runs **SetFileTime** from the source — no byte copy. Size/time compare rules are unchanged; this only affects what Sync does for that row | After a manual Explorer copy, bytes and streams may match while mod times do not; re-copying everything is wasteful |
 
 ## Open follow-ups
 
