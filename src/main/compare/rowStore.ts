@@ -190,6 +190,7 @@ export class CompareRowStore {
         if (row) rows.push(row)
       }
       total++
+      if (i > 0 && i % 256 === 0) await yieldToEventLoop()
     }
     return { rows, total }
   }
@@ -217,6 +218,13 @@ export class CompareRowStore {
     const index = Number(rowId)
     if (!Number.isInteger(index) || index < 0 || index >= this.count) return undefined
     return this.readIndex(index)
+  }
+
+  /** Remove synced rows from the change list without rewriting the JSONL file. */
+  async dropSyncedRows(ids: Iterable<string>): Promise<void> {
+    const dropIds = new Set(ids)
+    if (dropIds.size === 0) return
+    await this.dropRowsFast(dropIds)
   }
 
   async dropMatching(match: (row: CompareRow) => boolean): Promise<number> {

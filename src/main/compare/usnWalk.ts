@@ -135,7 +135,10 @@ export async function planPairUsn(job: JobFile, pair: JobPair): Promise<PairUsnP
     const incremental = await tryIncremental(pair, saved)
     if (incremental.ok) {
       const plan = incremental.plan
-      if (loaded.missDetail) plan.skipDetail = loaded.missDetail
+      // Stale on-disk cursor text is not relevant once incremental read succeeded.
+      if (loaded.missDetail?.includes('compare settings changed')) {
+        plan.skipDetail = loaded.missDetail
+      }
       return plan
     }
     lastFail = { reason: incremental.reason, detail: incremental.detail }

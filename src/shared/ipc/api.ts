@@ -103,6 +103,7 @@ export type SyncEvent =
       syncRunId: string
       rowId: string
       ok: boolean
+      stats?: CompareStats
       error?: string
       hint?: string
       code?: SyncFailure['code']

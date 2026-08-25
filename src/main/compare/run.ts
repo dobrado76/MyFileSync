@@ -107,6 +107,7 @@ function createCompareProgress(runId: string, emit: (event: CompareEvent) => voi
       flush()
     },
     stop(): void {
+      titleNote = ''
       flush()
     },
   }
@@ -119,19 +120,21 @@ let activeCompareRunId: string | null = null
 function enumerateTitleNote(
   pairIndex: number,
   pairCount: number,
+  pairLabel: string,
   usedJournal: boolean,
   skipReason?: Parameters<typeof usnSkipReasonLabel>[0],
   skipDetail?: string,
 ): string {
-  const pairPrefix =
-    pairCount > 1 ? `Pair ${pairIndex + 1} of ${pairCount}` : undefined
+  const who =
+    pairCount > 1 ? `Pair ${pairIndex + 1}/${pairCount} (${pairLabel})` : pairLabel
   if (usedJournal) {
-    const mode = pairPrefix ? `${pairPrefix} · change journal` : 'Change journal'
-    return skipDetail ? `${mode} (${skipDetail})` : mode
+    const settingsHint =
+      skipDetail && skipDetail.includes('compare settings changed') ? ` — ${skipDetail}` : ''
+    return `${who} · change journal${settingsHint}`
   }
   const why = usnSkipReasonLabel(skipReason ?? 'no_cursor', skipDetail)
   const detail = skipDetail && !why.includes(skipDetail) ? `${why} (${skipDetail})` : why
-  return pairPrefix ? `${pairPrefix} · full walk — ${detail}` : `Full walk — ${detail}`
+  return `${who} · full walk — ${detail}`
 }
 
 function pairLabelsForJob(job: JobFile): PairTreeLabel[] {
@@ -229,6 +232,7 @@ export async function runCompare(
         enumerateTitleNote(
           pairIndex,
           enabledPairs.length,
+          pairLabelFromLeftPath(pair.left),
           usnPlan.usedJournal,
           usnPlan.skipReason,
           usnPlan.skipDetail,

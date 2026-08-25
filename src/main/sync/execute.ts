@@ -8,6 +8,7 @@ import type {
   SyncFailure,
   SyncProgress,
   SyncSummary,
+  CompareStats,
 } from '@shared/schemas/compare'
 import { rowToPlannedAction } from '../compare/plan'
 import type { CompareRowStore } from '../compare/rowStore'
@@ -38,6 +39,7 @@ export type SyncEvent =
       syncRunId: string
       rowId: string
       ok: boolean
+      stats?: CompareStats
       error?: string
       hint?: string
       code?: SyncFailure['code']
@@ -46,7 +48,42 @@ export type SyncEvent =
 
 const activeRuns = new Map<string, SyncRunState>()
 const PROGRESS_INTERVAL_MS = 100
+const SYNC_UI_BATCH_MS = 250
 let cancelAllPending = false
+
+const pendingDropIds = new Set<string>()
+let dropBatchTimer: ReturnType<typeof setTimeout> | null = null
+
+async function flushSyncedRowDrops(
+  store: CompareRowStore,
+  emit: SyncEventEmitter,
+  syncRunId: string,
+): Promise<void> {
+  dropBatchTimer = null
+  if (pendingDropIds.size === 0) return
+  const ids = [...pendingDropIds]
+  pendingDropIds.clear()
+  await store.dropSyncedRows(ids)
+  emit({
+    type: 'sync:itemDone',
+    syncRunId,
+    rowId: ids[ids.length - 1]!,
+    ok: true,
+    stats: store.getStats(),
+  })
+}
+
+function queueSyncedRowDrop(
+  store: CompareRowStore,
+  emit: SyncEventEmitter,
+  syncRunId: string,
+  rowId: string,
+): void {
+  pendingDropIds.add(rowId)
+  if (!dropBatchTimer) {
+    dropBatchTimer = setTimeout(() => void flushSyncedRowDrops(store, emit, syncRunId), SYNC_UI_BATCH_MS)
+  }
+}
 
 export function getSyncRun(syncRunId: string): SyncRunState | undefined {
   return activeRuns.get(syncRunId)
@@ -227,6 +264,7 @@ export async function executeSync(
       succeeded++
       succeededIds.add(action.rowId)
       store.clearSyncError(action.rowId)
+      queueSyncedRowDrop(store, emit, syncRunId, action.rowId)
     } else {
       failed++
       state.progress.errors++
@@ -268,6 +306,8 @@ export async function executeSync(
 
   progress.note('Updating compare results…', 'finishing')
   progress.flush()
+
+  await flushSyncedRowDrops(store, emit, syncRunId)
 
   if (succeededIds.size > 0) {
     await store.applyReplacements(succeededIds, new Map())

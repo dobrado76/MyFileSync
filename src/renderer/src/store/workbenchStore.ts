@@ -124,12 +124,59 @@ const EMPTY_COMPARE_VIEW = {
   compareRows: [] as CompareRow[],
   compareRowOffset: 0,
   compareRowTotal: 0,
+  compareListVersion: 0,
   compareFolderTree: null as FolderTreeNode | null,
   comparePathPrefix: '',
   selectedRow: null as CompareRow | null,
 }
 
 const GRID_WINDOW = 80
+
+/** Drops stale virtualized grid page responses when the user scrolls quickly. */
+let compareWindowSeq = 0
+
+function bumpCompareWindowSeq(): number {
+  compareWindowSeq += 1
+  return compareWindowSeq
+}
+
+let syncListRefreshTimer: ReturnType<typeof setTimeout> | null = null
+let syncTreeRefreshTimer: ReturnType<typeof setTimeout> | null = null
+
+/** During sync, bump list version so the grid re-fetches at the current scroll position. */
+function scheduleSyncListRefresh(
+  getState: () => WorkbenchState,
+  setState: (partial: Partial<WorkbenchState>) => void,
+): void {
+  if (syncListRefreshTimer) return
+  syncListRefreshTimer = setTimeout(() => {
+    syncListRefreshTimer = null
+    setState({ compareListVersion: getState().compareListVersion + 1 })
+  }, 300)
+}
+
+/** Folder tree is expensive — refresh slowly during sync so row IPC stays responsive. */
+function scheduleSyncTreeRefresh(
+  getState: () => WorkbenchState,
+  setState: (partial: Partial<WorkbenchState>) => void,
+): void {
+  if (syncTreeRefreshTimer) return
+  syncTreeRefreshTimer = setTimeout(() => {
+    syncTreeRefreshTimer = null
+    void refreshCompareTreeOnly(getState, setState)
+  }, 2000)
+}
+
+async function refreshCompareTreeOnly(
+  getState: () => WorkbenchState,
+  setState: (partial: Partial<WorkbenchState>) => void,
+): Promise<void> {
+  const { compareRunId, compareFilter } = getState()
+  if (!compareRunId) return
+  const compareFolderTree = await loadCompareTree(compareRunId, compareFilter)
+  if (getState().compareRunId !== compareRunId || getState().compareFilter !== compareFilter) return
+  setState({ compareFolderTree })
+}
 
 async function loadCompareRows(
   runId: string,
@@ -175,6 +222,8 @@ type WorkbenchState = {
   compareRows: CompareRow[]
   compareRowOffset: number
   compareRowTotal: number
+  /** Bumped during sync so the virtualized grid re-fetches without resetting scroll. */
+  compareListVersion: number
   compareFolderTree: FolderTreeNode | null
   comparePathPrefix: string
   compareFilter: CompareFilter
@@ -299,6 +348,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   compareRows: [],
   compareRowOffset: 0,
   compareRowTotal: 0,
+  compareListVersion: 0,
   compareFolderTree: null,
   comparePathPrefix: '',
   compareFilter: 'all',
@@ -932,6 +982,15 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       progressSamples: [{ at: 0, items: 0, bytes: 0 }],
       statusText: 'Preparing sync…',
     })
+    resetAppWindowTitle()
+    if (syncListRefreshTimer) {
+      clearTimeout(syncListRefreshTimer)
+      syncListRefreshTimer = null
+    }
+    if (syncTreeRefreshTimer) {
+      clearTimeout(syncTreeRefreshTimer)
+      syncTreeRefreshTimer = null
+    }
     const result = await window.myFileSync.syncRun({
       jobId: activeJobId,
       runId: compareRunId,
@@ -984,6 +1043,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     }),
 
   setCompareFilter: async (filter) => {
+    bumpCompareWindowSeq()
     set({ compareFilter: filter })
     const { compareRunId, comparePathPrefix } = get()
     if (!compareRunId) return
@@ -995,6 +1055,7 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   },
 
   selectCompareFolder: async (pathPrefix) => {
+    bumpCompareWindowSeq()
     set({ comparePathPrefix: pathPrefix, selectedRow: null })
     const { compareRunId, compareFilter } = get()
     if (!compareRunId) return
@@ -1003,9 +1064,18 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   },
 
   loadCompareWindow: async (offset, limit) => {
+    const seq = bumpCompareWindowSeq()
     const { compareRunId, compareFilter, comparePathPrefix } = get()
     if (!compareRunId) return
-    const page = await loadCompareRows(compareRunId, compareFilter, comparePathPrefix, offset, limit)
+    let page = await loadCompareRows(compareRunId, compareFilter, comparePathPrefix, offset, limit)
+    if (page.rows.length === 0 && page.total > 0 && offset > 0) {
+      const clamped = Math.max(0, page.total - Math.max(limit, GRID_WINDOW))
+      if (clamped !== offset) {
+        page = await loadCompareRows(compareRunId, compareFilter, comparePathPrefix, clamped, limit)
+        page = { ...page, offset: clamped }
+      }
+    }
+    if (seq !== compareWindowSeq) return
     if (
       get().compareRunId !== compareRunId ||
       get().compareFilter !== compareFilter ||
@@ -1261,6 +1331,17 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   },
 
   handleSyncEvent: (event) => {
+    if (event.type === 'sync:itemDone' && event.ok) {
+      if (event.stats) {
+        set({
+          compareStats: event.stats,
+          compareRowTotal: event.stats.total,
+        })
+      }
+      scheduleSyncListRefresh(get, set)
+      scheduleSyncTreeRefresh(get, set)
+      return
+    }
     if (event.type === 'sync:progress') {
       if (get().syncCancelling) return
       const startedAt = get().progressStartedAt ?? Date.now()
@@ -1409,7 +1490,10 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
     if (event.type === 'compare:progress') {
       const path = event.currentPath?.trim()
       const phase = event.phase ?? 'comparing'
-      if (event.titleNote) setAppWindowTitle(event.titleNote)
+      if (get().compareBusy) {
+        if (event.titleNote) setAppWindowTitle(event.titleNote)
+        else resetAppWindowTitle()
+      }
       const queued = get().syncQueued ? ' · Sync queued' : ''
       const startedAt = get().progressStartedAt ?? Date.now()
       const switchedToCompare =

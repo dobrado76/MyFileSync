@@ -20,6 +20,7 @@ export default function App() {
     compareRows,
     compareRowOffset,
     compareRowTotal,
+    compareListVersion,
     compareFolderTree,
     compareRunId,
     comparePathPrefix,
@@ -227,6 +228,7 @@ export default function App() {
         compareRows={compareRows}
         compareRowOffset={compareRowOffset}
         compareRowTotal={compareRowTotal}
+        compareListVersion={compareListVersion}
         compareFolderTree={compareFolderTree}
         compareRunId={compareRunId}
         comparePathPrefix={comparePathPrefix}

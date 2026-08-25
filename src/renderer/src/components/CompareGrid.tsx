@@ -39,6 +39,7 @@ type CompareGridProps = {
   rowOffset: number
   rowTotal: number
   filter: CompareFilter
+  compareListVersion?: number
   busy: boolean
   folderTree: FolderTreeNode | null
   compareRunId?: string | null
@@ -114,6 +115,7 @@ export function CompareGrid({
   rows,
   rowOffset,
   rowTotal,
+  compareListVersion = 0,
   filter,
   busy,
   folderTree,
@@ -205,6 +207,7 @@ export function CompareGrid({
   }, [treeWidth])
 
   const bodyRef = useRef<HTMLDivElement>(null)
+  const scrollRafRef = useRef<number | null>(null)
   const requestWindow = useCallback(() => {
     const el = bodyRef.current
     if (!el || rowTotal === 0) return
@@ -214,7 +217,9 @@ export function CompareGrid({
     const limit = visible + OVERSCAN * 2
     const haveEnd = rowOffset + rows.length
     const needEnd = Math.min(rowTotal, start + visible + OVERSCAN)
-    if (rowOffset <= start && haveEnd >= needEnd) return
+    const viewportEnd = start + visible
+    const outsideWindow = start >= haveEnd || viewportEnd <= rowOffset
+    if (!outsideWindow && rowOffset <= start && haveEnd >= needEnd) return
     onRowsWindowChange(offset, limit)
   }, [onRowsWindowChange, rowOffset, rowTotal, rows.length])
 
@@ -224,11 +229,21 @@ export function CompareGrid({
 
   useEffect(() => {
     requestWindow()
-  }, [rowTotal, pathPrefix, filter, requestWindow])
+  }, [rowTotal, pathPrefix, filter, compareListVersion, requestWindow])
 
   const onBodyScroll = useCallback(() => {
-    requestWindow()
+    if (scrollRafRef.current != null) return
+    scrollRafRef.current = requestAnimationFrame(() => {
+      scrollRafRef.current = null
+      requestWindow()
+    })
   }, [requestWindow])
+
+  useEffect(() => {
+    return () => {
+      if (scrollRafRef.current != null) cancelAnimationFrame(scrollRafRef.current)
+    }
+  }, [])
 
   return (
     <section className="compare-panel">

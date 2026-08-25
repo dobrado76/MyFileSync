@@ -24,6 +24,7 @@ type BackupMirrorWorkbenchProps = {
   compareRows: CompareRow[]
   compareRowOffset: number
   compareRowTotal: number
+  compareListVersion: number
   compareFolderTree: FolderTreeNode | null
   compareRunId: string | null
   comparePathPrefix: string
@@ -79,6 +80,7 @@ export function BackupMirrorWorkbench(props: BackupMirrorWorkbenchProps) {
     compareRows,
     compareRowOffset,
     compareRowTotal,
+    compareListVersion,
     compareFolderTree,
     compareRunId,
     comparePathPrefix,
@@ -565,6 +567,7 @@ export function BackupMirrorWorkbench(props: BackupMirrorWorkbenchProps) {
                       rows={compareRows}
                       rowOffset={compareRowOffset}
                       rowTotal={compareRowTotal}
+                      compareListVersion={compareListVersion}
                       filter={compareFilter}
                       busy={compareBusy || syncBusy}
                       folderTree={compareFolderTree}
