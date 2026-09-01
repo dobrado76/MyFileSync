@@ -5,7 +5,9 @@ process.env.CSC_IDENTITY_AUTO_DISCOVERY = 'false'
 delete process.env.CSC_LINK
 delete process.env.WIN_CSC_LINK
 
-const child = spawn('npx', ['electron-builder', '--win'], {
+// Always --publish never: tag CI uploads via softprops/action-gh-release.
+// Without this, electron-builder auto-publishes on a git tag and fails without GH_TOKEN.
+const child = spawn('npx', ['electron-builder', '--win', '--publish', 'never'], {
   stdio: 'inherit',
   shell: true,
   env: process.env,
