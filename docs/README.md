@@ -1,6 +1,6 @@
 # Documentation
 
-Product and technical docs for **MyFileSync**.
+Product and technical docs for **MyFileSync**. Licence: [../LICENSING.md](../LICENSING.md) (**GPL-3.0-only**).
 
 ## Product
 
@@ -37,3 +37,5 @@ Product and technical docs for **MyFileSync**.
 | README | [../README.md](../README.md) |
 | Overview | [../PLAN.md](../PLAN.md) |
 | Changelog | [../CHANGELOG.md](../CHANGELOG.md) |
+| Licensing | [../LICENSING.md](../LICENSING.md) (**GPL-3.0-only**) |
+| Trademark | [../TRADEMARK.md](../TRADEMARK.md) |

@@ -12,6 +12,7 @@ import {
   legacyUsnPairKeyMatches,
   pathUnderRoot,
   shouldSkipUsnSubtree,
+  usnRecordAbsPaths,
 } from '@shared/compare/usnPlan'
 
 describe('journalCursorValid', () => {
@@ -78,6 +79,32 @@ describe('pathUnderRoot', () => {
     expect(pathUnderRoot('D:\\Vault\\photos\\a.jpg', 'D:\\Vault')).toBe('photos/a.jpg')
     expect(pathUnderRoot('D:\\Vault', 'D:\\Vault')).toBe('')
     expect(pathUnderRoot('E:\\other\\a.jpg', 'D:\\Vault')).toBeNull()
+  })
+})
+
+describe('usnRecordAbsPaths', () => {
+  it('includes both live FRN path and parent+name when a file was renamed', () => {
+    const paths = usnRecordAbsPaths(
+      'D:\\Vault\\models\\loras\\prod\\a.safetensors',
+      'D:\\Vault\\models\\loras\\!Testing',
+      'a.safetensors',
+    )
+    expect(paths).toEqual([
+      'D:\\Vault\\models\\loras\\prod\\a.safetensors',
+      'D:\\Vault\\models\\loras\\!Testing\\a.safetensors',
+    ])
+  })
+
+  it('dedupes when live path already matches the journal name', () => {
+    expect(
+      usnRecordAbsPaths('D:\\Vault\\keep\\a.txt', 'D:\\Vault\\keep', 'a.txt'),
+    ).toEqual(['D:\\Vault\\keep\\a.txt'])
+  })
+
+  it('falls back to parent+name when the FRN no longer resolves', () => {
+    expect(usnRecordAbsPaths(null, 'D:\\Vault\\!Testing', 'gone.bin')).toEqual([
+      'D:\\Vault\\!Testing\\gone.bin',
+    ])
   })
 })
 

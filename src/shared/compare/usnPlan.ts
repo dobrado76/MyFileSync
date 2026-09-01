@@ -277,3 +277,34 @@ export function pathUnderRoot(absPath: string, root: string): string | null {
   if (!file.toLowerCase().startsWith(prefix.toLowerCase())) return null
   return normalizeRelPath(file.slice(prefix.length))
 }
+
+/**
+ * Absolute paths that may be dirty for one USN record.
+ * Live FRN path alone misses rename/move sources: OpenFileById returns the
+ * *current* location, while the record's parent+name is the path at event time
+ * (RENAME_OLD_NAME). Both must be marked dirty so the old folder is rescanned
+ * and right-side leftovers become Deletes (move detection).
+ */
+export function usnRecordAbsPaths(
+  selfAbs: string | null,
+  parentAbs: string | null,
+  nameFromRecord: string,
+): string[] {
+  const paths: string[] = []
+  const seen = new Set<string>()
+  function add(p: string | null | undefined): void {
+    if (!p) return
+    const normalized = p.replace(/\//g, '\\').replace(/\\+$/, '')
+    if (!normalized) return
+    const key = normalized.toLowerCase()
+    if (seen.has(key)) return
+    seen.add(key)
+    paths.push(normalized)
+  }
+  add(selfAbs)
+  const name = nameFromRecord.trim()
+  if (parentAbs && name && name !== '.' && name !== '..') {
+    add(`${parentAbs.replace(/[\\/]+$/, '')}\\${name}`)
+  }
+  return paths
+}

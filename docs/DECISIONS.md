@@ -34,6 +34,7 @@ Locked product and technical decisions. Update this file when behavior changes.
 | **D29** | Compare (and Sync) **do not start** if an enabled local pair root is missing or its drive is offline. One error, no walk | A disconnected target must not become tens of thousands of Create rows |
 | **D30** | Compare is **two-phase**: enumerate both sides (same filters, skips, USN) for an exact item count, then classify. Directory listings are reused so the extra pass is not a second disk walk (unless the tree is huge and the listing cache is dropped). Progress `total` is that count | A live percent and remaining count need a known total; guessing while walking is misleading |
 | **D31** | **`behavior.touchTimeWhenSizeMatches`** (default off): when `$DATA` size and compared ADS already match but last-write time differs, Compare action is **TouchTime** and Sync runs **SetFileTime** from the source — no byte copy. Size/time compare rules are unchanged; this only affects what Sync does for that row | After a manual Explorer copy, bytes and streams may match while mod times do not; re-copying everything is wasteful |
+| **D32** | **Licence: GPL-3.0-only.** Trademark policy for the MyFileSync name/logo: [TRADEMARK.md](../TRADEMARK.md). Overview: [LICENSING.md](../LICENSING.md). | Strong copyleft against proprietary closed forks; brand separate from code |
 
 ## Open follow-ups
 

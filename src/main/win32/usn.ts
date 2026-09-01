@@ -1,8 +1,7 @@
 import koffi from 'koffi'
 import { toLongPath } from '@shared/ads/paths'
+import { pathUnderRoot, usnRecordAbsPaths, type UsnJournalLive } from '@shared/compare/usnPlan'
 import { ioError, ok, type Result } from '@shared/result'
-import type { UsnJournalLive } from '@shared/compare/usnPlan'
-import { pathUnderRoot } from '@shared/compare/usnPlan'
 import { withNativeLock } from './nativeLock'
 
 const GENERIC_READ = 0x80000000
@@ -311,12 +310,14 @@ function parseUsnRecords(
     const name = buf.toString('utf16le', offset + nameOff, offset + nameOff + nameLen)
     const selfPath = resolveFrnPath(volumeHandle, fileId, cache)
     const parentPath = resolveFrnPath(volumeHandle, parentId, cache)
-    const abs = selfPath ?? (parentPath ? `${parentPath.replace(/\\+$/, '')}\\${name}` : null)
-    if (!abs) {
+    const candidates = usnRecordAbsPaths(selfPath, parentPath, name)
+    if (candidates.length === 0) {
       unresolved++
     } else {
-      const rel = pathUnderRoot(abs, pairRoot)
-      if (rel !== null) relPaths.push(rel)
+      for (const abs of candidates) {
+        const rel = pathUnderRoot(abs, pairRoot)
+        if (rel !== null) relPaths.push(rel)
+      }
     }
     offset += recordLength
   }

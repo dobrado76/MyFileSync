@@ -4,6 +4,14 @@ All notable changes to MyFileSync are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- **Licence (D32)** — **GPL-3.0-only**, plus trademark policy for the product name/logo. See [LICENSING.md](LICENSING.md), [TRADEMARK.md](TRADEMARK.md), [NOTICE](NOTICE).
+
+### Fixed
+
+- Change-journal compare after a left-side move/rename now marks the **old** path dirty too (USN `RENAME_OLD_NAME`). Previously only the live FRN path was used, so the old folder was skipped, target leftovers never showed as Delete, and move detection fell back to Create.
+
 ## [0.2.0] — 2026-08-23
 
 First full compare/sync release after v0.1. See [RELEASE_NOTES.md](RELEASE_NOTES.md).
