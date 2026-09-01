@@ -55,7 +55,12 @@ await window.myFileSync.adsCopy({
 
 ## CI
 
-GitHub Actions on `windows-latest`: `npm run check`.
+GitHub Actions (`build-windows.yml`) on `windows-latest`:
+
+1. `.\scripts\create-fixtures.ps1` — ADS fixtures are gitignored; CI generates them on the runner’s NTFS volume
+2. `npm run check`
+
+The ADS integration suite also creates fixtures in `beforeAll` so a local `npm run test` works without running the script first.
 
 ## Related
 

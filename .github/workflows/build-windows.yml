@@ -34,6 +34,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Create NTFS ADS fixtures
+        shell: pwsh
+        run: .\scripts\create-fixtures.ps1
+
       - name: Check
         run: npm run check
 

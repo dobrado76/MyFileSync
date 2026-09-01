@@ -12,6 +12,7 @@ All notable changes to MyFileSync are documented here.
 ### Fixed
 
 - Change-journal compare after a left-side move/rename now marks the **old** path dirty too (USN `RENAME_OLD_NAME`). Previously only the live FRN path was used, so the old folder was skipped, target leftovers never showed as Delete, and move detection fell back to Create.
+- CI ADS integration tests — fixtures are gitignored; suite now creates them in `beforeAll`, and the workflow runs `create-fixtures.ps1` before `npm run check`.
 
 ## [0.2.0] — 2026-08-23
 
