@@ -35,7 +35,8 @@ describe('enabledJobPairs', () => {
 describe('compare.useUsnJournal', () => {
   it('defaults on for older job files', () => {
     const job = createDefaultJob('usn')
-    const { useUsnJournal: _drop, ...compare } = job.compare
+    const compare = { ...job.compare }
+    delete (compare as { useUsnJournal?: boolean }).useUsnJournal
     const parsed = jobSchema.parse({ ...job, compare })
     expect(parsed.compare.useUsnJournal).toBe(true)
   })

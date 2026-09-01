@@ -147,9 +147,10 @@ export function classifyPair(
     }
   }
 
-  let { action, direction, included } = planAction(category, job.variant)
+  const { action, direction, included } = planAction(category, job.variant)
+  let syncAction = action
   if (left && right) {
-    action = maybeTouchTimeAction(job, action, left, right, adsDelta.equal)
+    syncAction = maybeTouchTimeAction(job, action, left, right, adsDelta.equal)
   }
 
   const row: CompareRow = {
@@ -157,7 +158,7 @@ export function classifyPair(
     pairId,
     relPath,
     category,
-    action,
+    action: syncAction,
     direction,
     included,
     adsDelta,

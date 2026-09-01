@@ -113,34 +113,34 @@ export function migrateJobForParse(raw: unknown): unknown {
   if (!raw || typeof raw !== 'object') return raw
   const job = { ...(raw as Record<string, unknown>) }
 
-  if (job.compare && typeof job.compare === 'object') {
-    const compare = { ...(job.compare as Record<string, unknown>) }
-    delete compare.method
-    delete compare.contentHash
-    delete compare.hashWhenSizeOrTimeDiffers
-    delete compare.useAdsCache
-    delete compare.fastFolderCompare
-    job.compare = compare
+  if (job['compare'] && typeof job['compare'] === 'object') {
+    const compare = { ...(job['compare'] as Record<string, unknown>) }
+    delete compare['method']
+    delete compare['contentHash']
+    delete compare['hashWhenSizeOrTimeDiffers']
+    delete compare['useAdsCache']
+    delete compare['fastFolderCompare']
+    job['compare'] = compare
   }
 
-  if (job.ads && typeof job.ads === 'object') {
-    const ads = { ...(job.ads as Record<string, unknown>) }
-    delete ads.writeCacheToAds
-    delete ads.cacheStreamNames
-    const exclude = Array.isArray(ads.excludeStreams)
-      ? [...(ads.excludeStreams as string[])]
+  if (job['ads'] && typeof job['ads'] === 'object') {
+    const ads = { ...(job['ads'] as Record<string, unknown>) }
+    delete ads['writeCacheToAds']
+    delete ads['cacheStreamNames']
+    const exclude = Array.isArray(ads['excludeStreams'])
+      ? [...(ads['excludeStreams'] as string[])]
       : ['Zone.Identifier']
     if (!exclude.includes(LEGACY_MD5_CACHE_STREAM)) {
       exclude.push(LEGACY_MD5_CACHE_STREAM)
     }
-    ads.excludeStreams = exclude
-    job.ads = ads
+    ads['excludeStreams'] = exclude
+    job['ads'] = ads
   }
 
-  if (job.behavior && typeof job.behavior === 'object') {
-    const behavior = { ...(job.behavior as Record<string, unknown>) }
-    delete behavior.verifyAfterCopy
-    job.behavior = behavior
+  if (job['behavior'] && typeof job['behavior'] === 'object') {
+    const behavior = { ...(job['behavior'] as Record<string, unknown>) }
+    delete behavior['verifyAfterCopy']
+    job['behavior'] = behavior
   }
 
   return job

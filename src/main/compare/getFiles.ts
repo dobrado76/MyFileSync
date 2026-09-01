@@ -195,7 +195,6 @@ async function walkPair(options: WalkOptions): Promise<number> {
   const leftRoot = options.pair.left
   const rightRoot = options.pair.right
   const job = options.job
-  const checkAds = pairComparesAds(options.pair)
   const includeLeft = compilePathFilter(job.filters.include, job.filters.exclude, leftRoot)
   const includeRight =
     leftRoot.toLowerCase() === rightRoot.toLowerCase()

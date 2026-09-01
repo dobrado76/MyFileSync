@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs'
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
-import type { ZodType } from 'zod'
+import type { ZodTypeAny } from 'zod'
+import { type z } from 'zod'
 import { ioError, ok, validationError, type Result } from '@shared/result'
 import { mfeRevealUri } from '@shared/shell/mfe'
 import { IPC_CHANNELS, EVENT_CHANNELS } from '@shared/ipc/contract'
@@ -70,10 +71,10 @@ function emitEvent(event: unknown): void {
   getMainWindow()?.webContents.send(EVENT_CHANNELS.SYNC_EVENT, event)
 }
 
-function handle<TReq, TRes>(
+function handle<TSchema extends ZodTypeAny, TRes>(
   channel: string,
-  schema: ZodType<TReq>,
-  fn: Handler<TReq, TRes>,
+  schema: TSchema,
+  fn: Handler<z.output<TSchema>, TRes>,
 ): void {
   ipcMain.handle(channel, async (_event, payload: unknown) => {
     const parsed = schema.safeParse(payload ?? {})
@@ -82,7 +83,7 @@ function handle<TReq, TRes>(
     }
 
     try {
-      return await fn(parsed.data)
+      return await fn(parsed.data as z.output<TSchema>)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       return validationError(message)

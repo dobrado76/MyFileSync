@@ -9,7 +9,6 @@ import {
   describeUsnFilterKeyDiff,
   describeUsnPairIdentityDiff,
   describeJournalCursorInvalid,
-  journalCursorValid,
   legacyUsnPairKeyMatches,
   pairIdentityKeysEqual,
   type UsnJournalCursor,
@@ -180,15 +179,6 @@ async function findStoreByPairIdentity(
   return null
 }
 
-async function loadPairUsnFromStore(job: JobFile, pair: JobPair): Promise<PersistedUsnPair | null> {
-  const storeKey = compareUsnStoreKey(job, pair)
-  const file = await pairStorePath(storeKey)
-  let saved = await readJsonFile<PersistedUsnPairFile>(file)
-  if (!saved) saved = await findStoreByPairIdentity(pair)
-  if (!saved || saved.version !== 1 || !pairIdentityKeysEqual(saved.pairIdentityKey, pair)) return null
-  return pairFileToPersisted(saved)
-}
-
 async function loadLegacyJobPair(
   job: JobFile,
   pair: JobPair,
@@ -309,7 +299,7 @@ export async function persistUsnAfterCompare(
   filterKey: string,
 ): Promise<void> {
   void filterKey
-  for (const [pairId, cursors] of Object.entries(pairs)) {
+  for (const [pairId] of Object.entries(pairs)) {
     const pair = job.pairs.find((item) => item.id === pairId)
     if (!pair) continue
     const outstanding = outstandingRelPaths(store, pairId)

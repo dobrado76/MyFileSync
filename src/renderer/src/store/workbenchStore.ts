@@ -1297,8 +1297,9 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
   catchUpProgressSample: () => {
     const startedAt = get().progressStartedAt
     if (!startedAt) return
-    if (get().syncBusy && get().syncProgress) {
+    if (get().syncBusy) {
       const progress = get().syncProgress
+      if (!progress) return
       set({
         progressSamples: appendSample(
           get().progressSamples,
@@ -1313,8 +1314,9 @@ export const useWorkbenchStore = create<WorkbenchState>((set, get) => ({
       })
       return
     }
-    if (get().compareBusy && get().compareProgress) {
+    if (get().compareBusy) {
       const progress = get().compareProgress
+      if (!progress) return
       set({
         progressSamples: appendSample(
           get().progressSamples,
