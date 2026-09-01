@@ -55,11 +55,14 @@ Workflow: [`.github/workflows/build-windows.yml`](../.github/workflows/build-win
 | Tag `v*` (e.g. `v0.2.15`) | Check + build NSIS installer → attach to a **GitHub Release** |
 | **Actions → Run workflow** | Check only (same as a main push) |
 
-`package.json` **version must match the tag** (`v0.2.15` ↔ `0.2.15`). CI fails the release job if they differ. Use `npm run dist:nobump` / `npm run build:win` so the tag build does **not** bump the patch.
+`package.json` **version must match the tag** after normalizing (same rules as the app: `v0.2` ↔ `0.2.0`, `v0.2.15` ↔ `0.2.15`). CI fails the release job if they differ. Use `npm run dist:nobump` / `npm run build:win` so the tag build does **not** bump the patch.
 
 ```powershell
-# package.json version should already be 0.2.15
-git tag v0.2.15
+# Short tag when patch is zero:
+# package.json "version": "0.2.0"  →  git tag v0.2
+
+# Full tag otherwise (current 0.2.15):
+# package.json "version": "0.2.15" →  git tag v0.2.15
 git push origin v0.2.15
 ```
 

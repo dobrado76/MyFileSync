@@ -63,16 +63,27 @@ jobs:
       - name: Assert package.json version matches tag
         shell: pwsh
         run: |
+          function Normalize-Version([string]$v) {
+            $t = $v.Trim() -replace '^[vV]', ''
+            $nums = @()
+            foreach ($part in ($t.Split('.') | Select-Object -First 3)) {
+              if ($part -match '^(\d+)') { $nums += [int]$Matches[1] } else { $nums += 0 }
+            }
+            while ($nums.Count -lt 3) { $nums += 0 }
+            return ($nums[0..2] -join '.')
+          }
+
           $tag = $env:GITHUB_REF_NAME
-          if ($tag -notmatch '^v(\d+\.\d+\.\d+)$') {
-            throw "Tag must be vX.Y.Z (e.g. v0.2.15), got: $tag"
+          if ($tag -notmatch '^v\d+\.\d+(\.\d+)?$') {
+            throw "Tag must be vX.Y or vX.Y.Z (e.g. v0.2 or v0.2.15), got: $tag"
           }
-          $expected = $Matches[1]
           $pkg = (Get-Content package.json -Raw | ConvertFrom-Json).version
-          if ($pkg -ne $expected) {
-            throw "package.json version is '$pkg' but tag is '$tag' — bump package.json before tagging."
+          $tagNorm = Normalize-Version $tag
+          $pkgNorm = Normalize-Version $pkg
+          if ($tagNorm -ne $pkgNorm) {
+            throw "package.json version is '$pkg' (→ $pkgNorm) but tag is '$tag' (→ $tagNorm). Short tags like v0.2 only match 0.2.0; for 0.2.15 use v0.2.15."
           }
-          Write-Host "Version OK: $pkg"
+          Write-Host "Version OK: tag $tag matches package.json $pkg"
 
       - name: Build NSIS installer
         env:
