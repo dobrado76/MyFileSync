@@ -60,7 +60,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Assert package.json version matches tag
+      - name: Assert tag matches package.json (exact or short vX.Y)
         shell: pwsh
         run: |
           function Normalize-Version([string]$v) {
@@ -80,10 +80,19 @@ jobs:
           $pkg = (Get-Content package.json -Raw | ConvertFrom-Json).version
           $tagNorm = Normalize-Version $tag
           $pkgNorm = Normalize-Version $pkg
-          if ($tagNorm -ne $pkgNorm) {
-            throw "package.json version is '$pkg' (→ $pkgNorm) but tag is '$tag' (→ $tagNorm). Short tags like v0.2 only match 0.2.0; for 0.2.15 use v0.2.15."
+          $isShortTag = $tag -match '^v\d+\.\d+$'
+          $tagParts = $tagNorm.Split('.')
+          $pkgParts = $pkgNorm.Split('.')
+          $exact = $tagNorm -eq $pkgNorm
+          $shortLine = $isShortTag -and ($tagParts[0] -eq $pkgParts[0]) -and ($tagParts[1] -eq $pkgParts[1])
+          if (-not ($exact -or $shortLine)) {
+            throw "package.json version is '$pkg' but tag is '$tag'. Use v$pkgNorm, or short v$($pkgParts[0]).$($pkgParts[1]) for this $(($pkgParts[0])).$(($pkgParts[1])).x line."
           }
-          Write-Host "Version OK: tag $tag matches package.json $pkg"
+          if ($shortLine -and -not $exact) {
+            Write-Host "Short tag $tag accepted for package.json $pkg — installer will be MyFileSync-Setup-$pkg.exe"
+          } else {
+            Write-Host "Version OK: tag $tag matches package.json $pkg"
+          }
 
       - name: Build NSIS installer
         env:

@@ -81,7 +81,7 @@ npm run build:win    # installer without bump (same as dist:nobump; used by tag 
 
 Requires **Node.js LTS (20+)** and **Windows 10/11 x64**. Settings and jobs live in `%APPDATA%\myfilesync` for both dev and installed builds. Details: [docs/BUILD.md](docs/BUILD.md).
 
-Tagged releases (`vX.Y` or `vX.Y.Z`) build the installer in GitHub Actions and attach it to the Release. Tag must match `package.json` (`v0.2` ↔ `0.2.0`, `v0.2.15` ↔ `0.2.15`). Then `git push origin <tag>`.
+Tagged releases (`vX.Y` or `vX.Y.Z`) build the installer in GitHub Actions. Short tags like `v0.2` are allowed for any `0.2.x` in `package.json` (installer still uses the full version, e.g. `0.2.15`). Or tag the exact version: `v0.2.15`.
 
 ---
 
