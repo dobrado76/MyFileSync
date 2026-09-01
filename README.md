@@ -76,10 +76,12 @@ npm install
 npm run dev          # HMR — same %APPDATA%\myfilesync as the installed app
 npm run check        # typecheck + lint + tests
 npm run dist         # bump patch, prune old Setup*.exe, build installer
-npm run dist:nobump  # rebuild without bumping version
+npm run build:win    # installer without bump (same as dist:nobump; used by tag CI)
 ```
 
 Requires **Node.js LTS (20+)** and **Windows 10/11 x64**. Settings and jobs live in `%APPDATA%\myfilesync` for both dev and installed builds. Details: [docs/BUILD.md](docs/BUILD.md).
+
+Tagged releases (`vX.Y.Z`) build the installer in GitHub Actions and attach it to the Release — bump `package.json` to match the tag first, then `git push origin vX.Y.Z`.
 
 ---
 
@@ -166,7 +168,7 @@ Use MyFileSync (or another ADS-aware tool) when backing up those drives or folde
 | `npm run build` | Production electron-vite build |
 | `npm run dist` | Bump patch, prune old Setup*.exe, build Windows installer |
 | `npm run dist:nobump` | Installer without version bump |
-| `npm run build:win` | Alias for `dist` |
+| `npm run build:win` | Same as `dist:nobump` (used by tag CI) |
 
 Open **this folder** as the workspace. Everything needed to build and ship lives here.
 

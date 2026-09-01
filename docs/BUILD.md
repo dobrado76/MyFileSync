@@ -47,7 +47,28 @@ After a successful build, older `MyFileSync-Setup-*.exe` (and matching `.blockma
 
 ## CI
 
-GitHub Actions on `windows-latest` runs `npm run check`. Tag-push installer attach is optional.
+Workflow: [`.github/workflows/build-windows.yml`](../.github/workflows/build-windows.yml)
+
+| Trigger | What runs |
+|---------|-----------|
+| Push / PR to `main` or `master` | `npm run check` on `windows-latest` |
+| Tag `v*` (e.g. `v0.2.15`) | Check + build NSIS installer → attach to a **GitHub Release** |
+| **Actions → Run workflow** | Check only (same as a main push) |
+
+`package.json` **version must match the tag** (`v0.2.15` ↔ `0.2.15`). CI fails the release job if they differ. Use `npm run dist:nobump` / `npm run build:win` so the tag build does **not** bump the patch.
+
+```powershell
+# package.json version should already be 0.2.15
+git tag v0.2.15
+git push origin v0.2.15
+```
+
+When the workflow finishes, download from:
+
+`https://github.com/dobrado76/MyFileSync/releases/latest`
+
+Installers are **not** stored as Actions artifacts (quota). They only appear on the GitHub Release.
+
 ## Versioning
 
 Semantic versioning in `package.json`. `npm run dist` increments the patch (`Z`) before building so each installer is a new `MyFileSync-Setup-X.Y.Z.exe`. Use `npm run dist:nobump` to rebuild the same version. Display uses short form where patch is zero (for example `0.2.0` → **v0.2**). Job schema `version` field is independent of app semver.

@@ -7,6 +7,7 @@ All notable changes to MyFileSync are documented here.
 ### Changed
 
 - **Licence (D32)** — **GPL-3.0-only**, plus trademark policy for the product name/logo. See [LICENSING.md](LICENSING.md), [TRADEMARK.md](TRADEMARK.md), [NOTICE](NOTICE).
+- **CI** — tag `vX.Y.Z` builds the Windows installer and attaches it to a GitHub Release (same pattern as MyFileExplorer). See [docs/BUILD.md](docs/BUILD.md).
 
 ### Fixed
 

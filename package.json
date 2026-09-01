@@ -20,7 +20,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check": "npm run typecheck && npm run lint && npm run test",
-    "build:win": "npm run dist"
+    "build:win": "npm run dist:nobump"
   },
   "dependencies": {
     "chokidar": "^5.0.0",
