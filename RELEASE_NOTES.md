@@ -32,7 +32,7 @@
 
 1. Install `MyFileSync-Setup-0.2.0.exe` over v0.1 or replace the portable build.
 2. After upgrade, run **Compare → Sync (complete) → Compare** once per heavy pair so USN cursors are written under `compare-usn/pairs/`.
-3. If a pair still full-walks, read the **window title** — it names the reason (stale cursor, journal wrap, too many changes, etc.).
+3. If a pair still full-walks, read the **window title** — it names the reason (stale cursor, journal wrap, etc.).
 
 ## Install
 

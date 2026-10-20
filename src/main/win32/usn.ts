@@ -21,7 +21,6 @@ const FSCTL_READ_USN_JOURNAL = 0x000900bb
 const FSCTL_READ_UNPRIVILEGED_USN_JOURNAL = 0x000903ab
 
 const FileIdType = 0
-const MAX_RECORDS = 1_000_000
 
 const kernel32 = koffi.load('kernel32.dll')
 
@@ -341,9 +340,8 @@ export function usnReadShouldAbort(
   unresolved: number,
   relPathCount: number,
 ): string | null {
-  if (recordCount >= MAX_RECORDS) {
-    return 'Too many change-journal records; doing a full compare.'
-  }
+  // No record-count cap: a full pair walk on multi‑tens‑of‑millions trees is far
+  // slower than finishing the journal read. Only abort when path resolve is useless.
   const resolvedCount = recordCount - unresolved
   if (recordCount > 0 && relPathCount === 0 && resolvedCount === 0) {
     return 'Could not resolve any change-journal paths; doing a full compare.'
@@ -391,7 +389,7 @@ export async function readUsnDirtyRelPaths(
       const readCodes = [FSCTL_READ_UNPRIVILEGED_USN_JOURNAL, FSCTL_READ_USN_JOURNAL]
       let readCode = readCodes[0] ?? FSCTL_READ_UNPRIVILEGED_USN_JOURNAL
 
-      while (cursor < BigInt(live.value.nextUsn) && recordCount < MAX_RECORDS) {
+      while (cursor < BigInt(live.value.nextUsn)) {
         let request = writeReadJournalRequest(cursor, BigInt(live.value.journalId), useVersioned)
         let read = ioctl(handle, readCode, request, out)
         if (!read.ok && useVersioned) {
@@ -420,9 +418,6 @@ export async function readUsnDirtyRelPaths(
         cursor = parsed.nextStartUsn
       }
 
-      if (recordCount >= MAX_RECORDS) {
-        return ioError('Too many change-journal records; doing a full compare.')
-      }
       const abort = usnReadShouldAbort(recordCount, unresolved, relPaths.length)
       if (abort) return ioError(abort)
 

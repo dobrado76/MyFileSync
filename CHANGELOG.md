@@ -14,6 +14,7 @@ All notable changes to MyFileSync are documented here.
 - Change-journal compare after a left-side move/rename now marks the **old** path dirty too (USN `RENAME_OLD_NAME`). Previously only the live FRN path was used, so the old folder was skipped, target leftovers never showed as Delete, and move detection fell back to Create.
 - CI ADS integration tests — fixtures are gitignored; suite now creates them in `beforeAll`, and the workflow runs `create-fixtures.ps1` before `npm run check`.
 - Tag CI: `electron-builder --publish never` so installers are attached only via `action-gh-release` (no `GH_TOKEN` required for the pack step).
+- USN compare no longer aborts after 1M journal records (“too many file changes”). If the cursor is still in the ring, the full journal is read — far cheaper than a multi‑hour full walk on large trees.
 
 ## [0.2.0] — 2026-08-23
 

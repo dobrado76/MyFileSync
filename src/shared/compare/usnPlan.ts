@@ -214,7 +214,6 @@ export type UsnSkipReason =
   | 'no_cursor'
   | 'cursor_stale'
   | 'settings_mismatch'
-  | 'too_many_changes'
   | 'unresolved_paths'
   | 'journal_read_failed'
 
@@ -230,8 +229,6 @@ export function usnSkipReasonLabel(reason: UsnSkipReason, detail?: string): stri
       return detail ?? 'saved cursor is no longer valid for this volume'
     case 'settings_mismatch':
       return detail ?? 'compare settings or folder paths changed since last cursor'
-    case 'too_many_changes':
-      return 'too many file changes since last Compare'
     case 'unresolved_paths':
       return detail ?? 'change journal paths could not be resolved'
     case 'journal_read_failed':
@@ -243,7 +240,6 @@ export function usnSkipReasonLabel(reason: UsnSkipReason, detail?: string): stri
 export function classifyUsnReadError(message: string): UsnSkipReason {
   const lower = message.toLowerCase()
   if (lower.includes('wrapped') || lower.includes('recreated')) return 'cursor_stale'
-  if (lower.includes('too many change-journal records')) return 'too_many_changes'
   if (lower.includes('could not be resolved')) return 'unresolved_paths'
   if (lower.includes('no ntfs change journal')) return 'no_journal'
   return 'journal_read_failed'
