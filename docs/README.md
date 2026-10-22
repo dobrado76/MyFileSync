@@ -2,6 +2,26 @@
 
 Product and technical docs for **MyFileSync**. Licence: [../LICENSING.md](../LICENSING.md) (**GPL-3.0-only**).
 
+For day-to-day help, start with the repository-root [AI-SUPPORT.md](../AI-SUPPORT.md) (one file you can hand to an assistant). The articles below are the sources for that bundle plus older engineering notes.
+
+## Support articles (bundled into AI-SUPPORT.md)
+
+| Doc | Contents |
+|-----|----------|
+| [product.md](product.md) | Purpose, variants, non-goals |
+| [getting-started.md](getting-started.md) | Install, first job, AppData |
+| [user-guide.md](user-guide.md) | Window controls and workflows |
+| [configuration.md](configuration.md) | settings.json and job JSON |
+| [reference.md](reference.md) | Compare, sync order, limits |
+| [troubleshooting.md](troubleshooting.md) | Symptom → checks |
+| [FAQ.md](FAQ.md) | Common questions |
+| [architecture.md](architecture.md) | What runs where, in user terms |
+| [development.md](development.md) | Build, test, docs commands |
+| [roadmap.md](roadmap.md) | Shipped vs schema-only vs out of scope |
+| [support-evaluation.md](support-evaluation.md) | Maintainer Q&A cases (not bundled) |
+
+Regenerate the bundle with `npm run docs:build`. Check it with `npm run docs:check`.
+
 ## Product
 
 | Doc | Contents |

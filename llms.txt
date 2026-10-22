@@ -1,0 +1,11 @@
+# MyFileSync
+
+Windows folder sync and backup with NTFS alternate data stream fidelity.
+
+Support knowledge base (download this and attach it to an assistant):
+
+https://github.com/dobrado76/MyFileSync/blob/main/AI-SUPPORT.md
+
+Releases: https://github.com/dobrado76/MyFileSync/releases/latest
+
+Issues: https://github.com/dobrado76/MyFileSync/issues

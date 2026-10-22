@@ -1,0 +1,22 @@
+# Documentation freshness. Node only — no npm ci.
+name: Docs
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  ai-support:
+    name: AI-SUPPORT.md matches sources
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check support bundle
+        run: node scripts/check-ai-support.mjs

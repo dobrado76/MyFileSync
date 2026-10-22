@@ -17,6 +17,18 @@ It is FreeFileSync-familiar where that helps (mirror / update / two-way, filters
 | **Stack** | Electron · React 19 · TypeScript · Zustand · Zod · sql.js · koffi (Win32) |
 | **License** | **GPL-3.0-only** — [LICENSING.md](LICENSING.md) · [TRADEMARK.md](TRADEMARK.md) |
 
+## Need help? Ask an AI assistant
+
+The full support guide, FAQ, and troubleshooting notes are in **[AI-SUPPORT.md](AI-SUPPORT.md)** at the root of this repository. Download that file and give it to any assistant you already use. It is written so the assistant can answer from the document instead of inventing features this app does not have.
+
+1. Download [AI-SUPPORT.md](AI-SUPPORT.md) (open the file, then use your browser or git host’s download/raw control).
+2. Upload or attach it to the assistant.
+3. Ask the question or paste the error in your own words. Mention the version shown next to the **MyFileSync** title if the problem is about a recent change.
+
+Shorter reads, if you do not want the whole bundle: [docs/README.md](docs/README.md) and the FAQ inside [docs/FAQ.md](docs/FAQ.md).
+
+If the documented steps do not fix it, open a GitHub issue: https://github.com/dobrado76/MyFileSync/issues — app version, Windows version, sync variant, whether **ADS** was on, and the exact message. Leave out passwords, keys, and private folder listings. There is no separate support desk and no promised reply time.
+
 ---
 
 ## Why not just FreeFileSync / robocopy / “any backup”?

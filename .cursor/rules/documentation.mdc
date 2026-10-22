@@ -1,0 +1,26 @@
+---
+description: Keep user-support docs in sync when MyFileSync behaviour changes
+alwaysApply: true
+---
+
+# Documentation maintenance
+
+When a change affects what users can see or do, update the matching source under `docs/` in the same change, then regenerate the bundle.
+
+| Change | Update |
+| --- | --- |
+| UI control, label, or workflow | `docs/user-guide.md` and `docs/FAQ.md` |
+| Setting, default, or job/settings JSON | `docs/configuration.md` |
+| Error text or recovery | `docs/troubleshooting.md` and `docs/FAQ.md` |
+| Compare/sync rules, limits, CLI | `docs/reference.md` |
+| Install or data locations | `docs/getting-started.md` |
+| Shipped vs not shipped | `docs/roadmap.md` and `docs/product.md` |
+| Build or docs commands | `docs/development.md` |
+
+Then run `npm run docs:build` and commit `AI-SUPPORT.md` with the source edits.
+
+Do not hand-edit `AI-SUPPORT.md`. `npm run docs:check` must pass.
+
+Do not document controls that are not in the UI. Schema-only fields stay in the roadmap as not a finished feature.
+
+Engineering docs (`ARCHITECTURE.md`, `DECISIONS.md`, and the rest of the existing set) stay; do not delete them to “replace” them with the support articles.

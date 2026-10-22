@@ -20,6 +20,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check": "npm run typecheck && npm run lint && npm run test",
+    "docs:build": "node scripts/build-ai-support.mjs",
+    "docs:check": "node scripts/check-ai-support.mjs",
     "build:win": "npm run dist:nobump"
   },
   "dependencies": {

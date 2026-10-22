@@ -1,123 +1,33 @@
-# Architecture
+# Architecture (support view)
 
-## Process model
+This section explains behaviour you can observe. It is not an internal design dump.
 
-```mermaid
-flowchart TB
-  subgraph renderer [Renderer React]
-    UI[Compare grid Jobs Settings]
-    Store[Zustand store]
-  end
-  subgraph preload [Preload]
-    Bridge[Typed IPC bridge]
-  end
-  subgraph main [Electron main]
-    Jobs[jobs/]
-    Compare[compare/]
-    Sync[sync/]
-    ADS[ads/]
-    Win32[win32/]
-    DB[(SQLite userData)]
-  end
-  UI --> Store --> Bridge --> main
-  Compare --> DB
-  Sync --> ADS
-  Sync --> Win32
-```
+## Processes
 
-| Process | Responsibility |
-|---------|----------------|
-| **Main** | Filesystem I/O, Win32 ADS, compare/sync engine, SQLite, job load/save |
-| **Preload** | Typed `MyFileSyncApi`; no Node in renderer |
-| **Renderer** | React UI, Zustand state, no direct `fs` |
+- **Main process (Electron):** compare, sync, Win32 copy, ADS listing, job files, settings, SQLite, CLI.
+- **Window (React):** buttons, grids, dialogs. It cannot read the disk itself. It calls the main process and receives progress events.
 
-## Main modules
+If the window is closed, a GUI compare/sync stops with the app. A CLI `--run` has no window.
 
-```
-src/main/
-  index.ts              # App bootstrap, window, IPC register
-  ui/editContextMenu.ts # Cut/Copy/Paste/Select All on text fields
-  ipc/register.ts       # Zod-validated handlers
-  jobs/
-    store.ts            # Load/save job JSON
-    importIni.ts        # BackupMirror INI → JSON
-    importFfs.ts        # FreeFileSync .ffs_gui / .ffs_batch → JSON
-    exportFfs.ts        # JSON → FreeFileSync .ffs_gui / .ffs_batch
-  compare/
-    walk.ts             # Parallel directory traversal
-    classify.ts         # Diff categories + ADS manifest diff
-    plan.ts             # Action list builder
-  sync/
-    execute.ts          # Worker pool, progress, cancel
-    copy.ts             # CopyFileEx + copyStreams fallback
-    delete.ts           # Recycle Bin / permanent
-    vss.ts              # Optional snapshot path
-    hardlink.ts         # Multi-root hard links
-  ads/
-    list.ts             # FileStreamInfo enumeration (attributes-only; no $DATA read)
-    copyStreams.ts      # Alternate-only replication
-  db/
-    syncState.ts        # Per-job change DB
-  win32/
-    attrs.ts            # Read-only detection
-    nativeLock.ts       # Serialize koffi calls
-```
+## Data you can back up yourself
 
-```
-src/shared/
-  schemas/              # Zod: job, compare result, IPC
-  ipc/                  # Contract + api types
-  compare/              # Pure diff/filter helpers
-  result.ts             # Result envelope
+Copy `%APPDATA%\myfilesync` while the app is **not** running if you want a snapshot of jobs, settings, two-way databases, and USN cursors. Restoring that folder onto another PC restores definitions, not the files inside your source/target trees. USN cursors from another machine are meaningless; the next Compare should fall back to a full walk if the journal id does not match.
 
-src/renderer/
-  App.tsx
-  components/           # CompareGrid, FilterManager, …
-  store/                # Zustand
-```
+Do not edit `compare\` JSONL by hand.
 
-## Data flow: Compare → Sync
+## External components
 
-1. Renderer calls `compare.run({ jobId })`.
-2. Main loads job JSON, probes volumes.
-3. Parallel walk produces records per side with `$DATA` stats + ADS manifest.
-4. Classify merges into `CompareRow[]` with proposed `SyncAction`.
-5. Renderer displays rows; user toggles includes.
-6. Renderer calls `sync.run({ jobId, rowIds? })`.
-7. Main executes actions via worker pool; reports progress on `sync:event`.
-8. Two-way jobs update SQLite sync state.
+| Area | MyFileSync | Outside |
+| --- | --- | --- |
+| Install | Documents the NSIS exe and `npm run dist` | Windows Installer UI, SmartScreen |
+| NTFS streams | Lists and copies them on NTFS→NTFS via Win32 | The filesystem. exFAT cannot store ADS. |
+| Recycle Bin | Asks the shell to recycle when the option is on | Explorer’s Recycle Bin |
+| SFTP | Connects with host, user, password or key path (ssh2) | The SSH server’s own accounts, chroot, and disk |
+| USN journal | Reads cursors to skip unchanged folders | NTFS journal size and wrap policy |
+| FreeFileSync files | Imports `.ffs_gui` / `.ffs_batch` into a job | FreeFileSync itself |
+| Updates | Compares installer file names in a folder you choose | You supply the exe |
+| 7-Zip | Not used at runtime | electron-builder’s `7za.exe` during `npm run dist` only |
 
-## ADS integration
+## Sync safety boundary
 
-All NTFS fidelity flows through `ads/` + `sync/copy.ts`:
-
-- **Never** use Node `createReadStream`→`createWriteStream` alone for NTFS→NTFS file replication (drops ADS on large files).
-- Prefer **`CopyFileEx`** / **`CopyFileW`** for whole-file copy including alternates.
-- Fallback: copy `$DATA` then `copyStreams`.
-
-See [ADS_SYNC.md](ADS_SYNC.md).
-
-## SQLite
-
-| Database | Path |
-|----------|------|
-| Sync state | `userData/sync-jobs/{jobId}.db` |
-
-Schema details: [COMPARE_AND_SYNC.md](COMPARE_AND_SYNC.md), [PROJECT_FORMAT.md](PROJECT_FORMAT.md).
-
-## IPC pattern
-
-```typescript
-type Result<T> = { ok: true; value: T } | { ok: false; error: { code: string; message: string; hint?: string } }
-```
-
-Full channel list: [IPC_CONTRACT.md](IPC_CONTRACT.md).
-
-## Testing
-
-| Layer | Tests |
-|-------|-------|
-| `shared/compare/*` | Vitest pure functions |
-| `ads/paths.ts` | Vitest without Win32 |
-| Integration | NTFS fixture folder; Windows CI |
-| INI import | Fixture INI files |
+The app will delete or overwrite target files when the variant and the included rows say so. The safety tools are: the change list, row checkboxes, **Update** vs **Mirror**, the confirm dialog (GUI, not CLI, not queued-during-compare), and the Recycle Bin option. There is no second hidden backup unless `versioning.enabled` is true in that job’s JSON.
